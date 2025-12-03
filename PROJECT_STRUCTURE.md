@@ -3,7 +3,7 @@
 ## Complete File List
 
 ```
-SignalDriveLogger/
+Cell Signal Logger/
 ├── app/
 │   ├── build.gradle.kts              # App-level Gradle configuration
 │   ├── proguard-rules.pro            # ProGuard rules

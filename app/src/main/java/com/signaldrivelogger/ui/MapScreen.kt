@@ -77,8 +77,9 @@ fun MapScreen(
         }
     }
 
-    // Store map controller reference for centering
+    // Store map controller and location overlay references for centering
     val mapControllerRef = remember { mutableStateOf<IMapController?>(null) }
+    val locationOverlayRef = remember { mutableStateOf<MyLocationNewOverlay?>(null) }
 
     // Initialize osmdroid configuration
     LaunchedEffect(Unit) {
@@ -117,6 +118,7 @@ fun MapScreen(
                     // Add my location overlay
                     val locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this)
                     locationOverlay.enableMyLocation()
+                    locationOverlayRef.value = locationOverlay
                     overlays.add(locationOverlay)
                 }
             },
@@ -133,10 +135,30 @@ fun MapScreen(
         // Center on location button
         IconButton(
             onClick = {
-                currentLocation?.let { location ->
-                    mapControllerRef.value?.let { controller ->
+                val controller = mapControllerRef.value
+                if (controller != null) {
+                    // Try to get location from ViewModel first
+                    val location = currentLocation
+                    if (location != null) {
                         val point = GeoPoint(location.latitude, location.longitude)
                         controller.animateTo(point)
+                    } else {
+                        // Fallback to location overlay's current location
+                        val overlay = locationOverlayRef.value
+                        overlay?.let {
+                            val lastFix = it.lastFix
+                            if (lastFix != null) {
+                                val point = GeoPoint(lastFix.latitude, lastFix.longitude)
+                                controller.animateTo(point)
+                            } else {
+                                // If no location available, center on first record or show message
+                                if (filteredRecords.isNotEmpty()) {
+                                    val firstRecord = filteredRecords.first()
+                                    val point = GeoPoint(firstRecord.latitude, firstRecord.longitude)
+                                    controller.animateTo(point)
+                                }
+                            }
+                        }
                     }
                 }
             },

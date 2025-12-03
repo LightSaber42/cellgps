@@ -20,12 +20,17 @@ if (-not $adbCheck) {
     exit 1
 }
 
-# Check if device is connected
-$devices = adb devices | Select-String -Pattern "device$"
-if (-not $devices) {
+# Check if device is connected and get first device ID
+$deviceList = adb devices
+$deviceLines = $deviceList | Select-String -Pattern "\tdevice$"
+if (-not $deviceLines) {
     Write-Host "Error: No Android device connected. Please connect a device and enable USB debugging." -ForegroundColor Red
     exit 1
 }
+
+# Get the first device ID (split by tab and take first part)
+$firstDevice = ($deviceLines[0].Line -split "`t")[0]
+Write-Host "Using device: $firstDevice" -ForegroundColor Cyan
 
 Write-Host "Taking screenshot..." -ForegroundColor Cyan
 
@@ -34,7 +39,7 @@ try {
     # Capture binary output using .NET methods
     $processInfo = New-Object System.Diagnostics.ProcessStartInfo
     $processInfo.FileName = "adb"
-    $processInfo.Arguments = "exec-out screencap -p"
+    $processInfo.Arguments = "-s $firstDevice exec-out screencap -p"
     $processInfo.UseShellExecute = $false
     $processInfo.RedirectStandardOutput = $true
     $processInfo.CreateNoWindow = $true

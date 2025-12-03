@@ -182,7 +182,7 @@ class LoggingService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Signal Drive Logger")
+            .setContentTitle("Cell Signal Logger")
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)

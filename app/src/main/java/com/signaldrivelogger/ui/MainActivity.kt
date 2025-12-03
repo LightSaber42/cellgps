@@ -1,10 +1,13 @@
 package com.signaldrivelogger.ui
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,6 +26,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -33,9 +39,19 @@ import com.signaldrivelogger.ui.theme.SignalDriveLoggerTheme
 class MainActivity : ComponentActivity() {
     private val viewModel: LoggingViewModel by viewModels()
 
+    // File picker launcher
+    private val filePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { handleFileImport(it) }
+    }
+
     @OptIn(ExperimentalPermissionsApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Handle shared file intent
+        handleIntent(intent)
 
         setContent {
             SignalDriveLoggerTheme {
@@ -62,7 +78,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     if (permissions.allPermissionsGranted) {
-                        AppNavigation(viewModel = viewModel)
+                        AppNavigation(viewModel = viewModel, mainActivity = this@MainActivity)
                     } else {
                         PermissionRequestScreen(
                             onRequestPermissions = { permissions.launchMultiplePermissionRequest() }
@@ -72,10 +88,65 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        when (intent?.action) {
+            Intent.ACTION_SEND -> {
+                // Try EXTRA_STREAM first (for file attachments)
+                val uri = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                }
+                uri?.let { handleFileImport(it) }
+
+                // Also try EXTRA_TEXT for text-based sharing
+                if (uri == null) {
+                    val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+                    text?.let {
+                        // If it's a file path or URI, try to handle it
+                        if (it.startsWith("file://") || it.startsWith("content://")) {
+                            try {
+                                handleFileImport(android.net.Uri.parse(it))
+                            } catch (e: Exception) {
+                                // Ignore
+                            }
+                        }
+                    }
+                }
+            }
+            Intent.ACTION_VIEW -> {
+                intent.data?.let { handleFileImport(it) }
+            }
+        }
+    }
+
+    private fun handleFileImport(uri: Uri) {
+        try {
+            val inputStream = contentResolver.openInputStream(uri)
+            inputStream?.let {
+                CoroutineScope(Dispatchers.Main).launch {
+                    viewModel.importCsvFile(it)
+                }
+            }
+        } catch (e: Exception) {
+            // Error will be handled by ViewModel
+        }
+    }
+
+    fun launchFilePicker() {
+        filePickerLauncher.launch("text/csv")
+    }
 }
 
 @Composable
-fun AppNavigation(viewModel: LoggingViewModel) {
+fun AppNavigation(viewModel: LoggingViewModel, mainActivity: MainActivity) {
     val navController = rememberNavController()
 
     NavHost(
@@ -85,7 +156,8 @@ fun AppNavigation(viewModel: LoggingViewModel) {
         composable("main") {
             MainScreen(
                 viewModel = viewModel,
-                onNavigateToMap = { navController.navigate("map") }
+                onNavigateToMap = { navController.navigate("map") },
+                onImportFile = { mainActivity.launchFilePicker() }
             )
         }
         composable("map") {

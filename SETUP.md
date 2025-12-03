@@ -1,4 +1,4 @@
-# Setup Guide for SignalDriveLogger
+# Setup Guide for Cell Signal Logger
 
 ## Prerequisites
 

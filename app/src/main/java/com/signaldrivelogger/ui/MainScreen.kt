@@ -13,18 +13,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,17 +46,45 @@ import com.signaldrivelogger.data.SignalData
 fun MainScreen(
     viewModel: LoggingViewModel,
     onNavigateToMap: () -> Unit,
+    onImportFile: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isLogging by viewModel.isLogging.collectAsState()
     val records by viewModel.records.collectAsState()
-    val currentSignalData by viewModel.currentSignalData.collectAsState()
+    val currentSignalDataBySim by viewModel.currentSignalDataBySim.collectAsState()
     val filename by viewModel.filename.collectAsState()
 
     var filenameInput by remember { mutableStateOf(filename) }
+    val importError by viewModel.importError.collectAsState()
+    val importSuccess by viewModel.importSuccess.collectAsState()
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
-    Scaffold(modifier = modifier) { paddingValues ->
+    // Handle import error
+    LaunchedEffect(importError) {
+        importError?.let { error ->
+            scope.launch {
+                snackbarHostState.showSnackbar("Import Error: $error")
+            }
+            viewModel.clearImportError()
+        }
+    }
+
+    // Handle import success
+    LaunchedEffect(importSuccess) {
+        importSuccess?.let { success ->
+            scope.launch {
+                snackbarHostState.showSnackbar(success)
+            }
+            viewModel.clearImportSuccess()
+        }
+    }
+
+    Scaffold(
+        modifier = modifier,
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+    ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -61,12 +95,12 @@ fun MainScreen(
         ) {
             // Title
             Text(
-                text = "Signal Drive Logger",
+                text = "Cell Signal Logger",
                 style = MaterialTheme.typography.headlineMedium
             )
 
             // Current Signal Info Card
-            SignalInfoCard(signalData = currentSignalData)
+            SignalInfoCard(signalDataBySim = currentSignalDataBySim)
 
             // Filename Input
             OutlinedTextField(
@@ -103,6 +137,15 @@ fun MainScreen(
                 ) {
                     Text("View Map")
                 }
+            }
+
+            // Import Button
+            Button(
+                onClick = { onImportFile() },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isLogging
+            ) {
+                Text("Import CSV File")
             }
 
             // File Actions
@@ -190,14 +233,15 @@ fun MainScreen(
                 Text("Clear Records")
             }
         }
+
     }
 }
 
 /**
- * Card displaying current signal information.
+ * Card displaying current signal information for all SIMs.
  */
 @Composable
-private fun SignalInfoCard(signalData: SignalData?) {
+private fun SignalInfoCard(signalDataBySim: Map<Int, SignalData>) {
     Card(
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -210,10 +254,15 @@ private fun SignalInfoCard(signalData: SignalData?) {
             )
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (signalData != null) {
-                Text("Strength: ${signalData.signalStrength} dBm")
-                Text("Network: ${signalData.networkType}")
-                Text("Cell ID: ${signalData.cellId}")
+            if (signalDataBySim.isNotEmpty()) {
+                // Concatenate values from all SIMs
+                val strengths = signalDataBySim.values.map { it.signalStrength }.joinToString("/")
+                val networks = signalDataBySim.values.map { it.networkType }.joinToString("/")
+                val cellIds = signalDataBySim.values.map { it.cellId }.joinToString("/")
+
+                Text("Strength: $strengths dBm")
+                Text("Network: $networks")
+                Text("Cell ID: $cellIds")
             } else {
                 Text("No signal data available")
             }

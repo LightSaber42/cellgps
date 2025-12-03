@@ -127,4 +127,27 @@ class SignalRepository(
     fun setFilename(filename: String) {
         currentFilename = filename
     }
+
+    /**
+     * Imports records from a CSV file and appends them to existing records.
+     */
+    suspend fun importFromCsv(inputStream: java.io.InputStream): Result<String> {
+        return try {
+            val parseResult = com.signaldrivelogger.data.CsvParser.parse(inputStream)
+            when (parseResult) {
+                is com.signaldrivelogger.data.CsvParseResult.Success -> {
+                    // Append imported records to existing ones
+                    _records.value = _records.value + parseResult.records
+                    Result.success("Successfully imported ${parseResult.records.size} records")
+                }
+                is com.signaldrivelogger.data.CsvParseResult.Error -> {
+                    Result.failure(Exception(parseResult.message))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        } finally {
+            inputStream.close()
+        }
+    }
 }

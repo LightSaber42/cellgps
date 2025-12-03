@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -49,8 +52,14 @@ class LoggingViewModel(application: Application) : AndroidViewModel(application)
     private val _currentLocation = MutableStateFlow<Location?>(null)
     val currentLocation: StateFlow<Location?> = _currentLocation.asStateFlow()
 
-    private val _currentSignalData = MutableStateFlow<SignalData?>(null)
-    val currentSignalData: StateFlow<SignalData?> = _currentSignalData.asStateFlow()
+    // Track signal data for all SIMs by subscription ID
+    private val _currentSignalDataBySim = MutableStateFlow<Map<Int, SignalData>>(emptyMap())
+    val currentSignalDataBySim: StateFlow<Map<Int, SignalData>> = _currentSignalDataBySim.asStateFlow()
+
+    // Legacy single SIM support (for backward compatibility)
+    val currentSignalData: StateFlow<SignalData?> = _currentSignalDataBySim.asStateFlow().map {
+        it.values.firstOrNull()
+    }.stateIn(viewModelScope, SharingStarted.Lazily, null)
 
     private val _filename = MutableStateFlow("signal_log_${System.currentTimeMillis()}")
     val filename: StateFlow<String> = _filename.asStateFlow()
@@ -70,28 +79,12 @@ class LoggingViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        // Observe signal data
+        // Observe signal data from all SIMs
         viewModelScope.launch {
-            telephonyMonitor.currentSignalStrength.collect { strength ->
-                val signalData = _currentSignalData.value
-                if (signalData != null && strength != null) {
-                    _currentSignalData.value = signalData.copy(signalStrength = strength)
-                }
-            }
-        }
-
-        viewModelScope.launch {
-            telephonyMonitor.currentNetworkType.collect { networkType ->
-                val signalData = _currentSignalData.value
-                if (signalData != null) {
-                    _currentSignalData.value = signalData.copy(networkType = networkType)
-                } else {
-                    _currentSignalData.value = SignalData(
-                        signalStrength = telephonyMonitor.getCurrentSignalStrength() ?: -100,
-                        cellId = telephonyMonitor.getCurrentCellId() ?: 0,
-                        networkType = networkType
-                    )
-                }
+            multiSimMonitor.getAllSimSignalUpdates().collect { simSignalData ->
+                val currentMap = _currentSignalDataBySim.value.toMutableMap()
+                currentMap[simSignalData.subscriptionId] = simSignalData.signalData
+                _currentSignalDataBySim.value = currentMap
             }
         }
     }
@@ -136,6 +129,35 @@ class LoggingViewModel(application: Application) : AndroidViewModel(application)
 
     fun hasPhoneStatePermission(): Boolean {
         return telephonyMonitor.hasPermission()
+    }
+
+    private val _importError = MutableStateFlow<String?>(null)
+    val importError: StateFlow<String?> = _importError.asStateFlow()
+
+    private val _importSuccess = MutableStateFlow<String?>(null)
+    val importSuccess: StateFlow<String?> = _importSuccess.asStateFlow()
+
+    /**
+     * Imports records from a CSV file.
+     */
+    suspend fun importCsvFile(inputStream: java.io.InputStream) {
+        val result = signalRepository.importFromCsv(inputStream)
+        result.fold(
+            onSuccess = { message ->
+                _importSuccess.value = message
+            },
+            onFailure = { error ->
+                _importError.value = error.message ?: "Unknown error importing CSV file"
+            }
+        )
+    }
+
+    fun clearImportError() {
+        _importError.value = null
+    }
+
+    fun clearImportSuccess() {
+        _importSuccess.value = null
     }
 
     /**

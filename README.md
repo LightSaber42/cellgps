@@ -1,4 +1,4 @@
-# SignalDriveLogger
+# Cell Signal Logger
 
 A production-ready Android app that logs mobile signal strength while driving, displays the route on a map colored by signal strength, and runs in the background.
 

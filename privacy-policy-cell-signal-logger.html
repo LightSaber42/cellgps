@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - Cell Signal Logger</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+        }
+        h3 {
+            color: #555;
+            margin-top: 20px;
+        }
+        ul {
+            margin: 10px 0;
+        }
+        .last-updated {
+            font-style: italic;
+            color: #666;
+            margin-bottom: 20px;
+        }
+        a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <h1>Privacy Policy</h1>
+    <p class="last-updated"><em>Last updated: 3-Dec-2025</em></p>
+
+    <h2>Introduction</h2>
+    <p>Cell Signal Logger ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your information when you use our Cell Signal Logger mobile application ("the App").</p>
+
+    <h2>Information We Collect</h2>
+
+    <h3>Location Data</h3>
+    <p>The App collects and stores the following location information locally on your device:</p>
+    <ul>
+        <li>GPS coordinates (latitude, longitude, altitude)</li>
+        <li>Timestamp of each location reading</li>
+        <li>Location data is collected only when you actively start logging</li>
+    </ul>
+
+    <h3>Phone and Signal Data</h3>
+    <p>The App collects and stores the following device and signal information locally on your device:</p>
+    <ul>
+        <li>Mobile signal strength (RSRP in dBm)</li>
+        <li>Cell tower identification numbers</li>
+        <li>Network type (4G, 5G, LTE, etc.)</li>
+        <li>Data connection status and activity</li>
+        <li>SIM card information (for multi-SIM devices)</li>
+        <li>Network operator information</li>
+    </ul>
+    <p><strong>Note:</strong> The App requires the READ_PHONE_STATE permission to access signal strength and cell tower information. This permission is essential for the App's core functionality of logging signal quality.</p>
+
+    <h3>Storage and Security</h3>
+    <ul>
+        <li>All data is stored locally on your device</li>
+        <li>No data is transmitted to external servers</li>
+        <li>Your data remains private and under your control</li>
+        <li>Data is stored at: <code>Android/data/com.signaldrivelogger/files/signal_logs/</code></li>
+    </ul>
+
+    <h2>How We Use Your Information</h2>
+    <ul>
+        <li>To log signal strength measurements at your location</li>
+        <li>To display your route on a map with color-coded signal strength</li>
+        <li>To export your signal logs in CSV or GPX format</li>
+        <li>To provide real-time signal strength information</li>
+    </ul>
+
+    <h2>Data Sharing and Disclosure</h2>
+    <ul>
+        <li>We do not collect or share your personal data with third parties</li>
+        <li>We do not transmit your location or signal data to any external servers</li>
+        <li>Your data remains on your device unless you explicitly choose to export or share it</li>
+        <li>Map tiles are loaded from OpenStreetMap servers (no personal data is sent)</li>
+    </ul>
+
+    <h2>Permissions Explained</h2>
+
+    <h3>Location Permissions (ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION)</h3>
+    <ul>
+        <li><strong>Required for:</strong> Recording GPS coordinates with each signal measurement</li>
+        <li><strong>Used when:</strong> You actively start logging signal data</li>
+        <li><strong>Can be revoked:</strong> You can manage location permissions in your device settings</li>
+    </ul>
+
+    <h3>Phone State Permission (READ_PHONE_STATE)</h3>
+    <ul>
+        <li><strong>Required for:</strong> Reading mobile signal strength and cell tower information</li>
+        <li><strong>Used when:</strong> You actively start logging signal data</li>
+        <li><strong>Why needed:</strong> Essential for the App's core functionality of measuring and logging signal quality</li>
+        <li><strong>Can be revoked:</strong> You can manage this permission in your device settings (App functionality will be limited)</li>
+    </ul>
+
+    <h3>Foreground Service Permission</h3>
+    <ul>
+        <li><strong>Required for:</strong> Running the logging service in the background</li>
+        <li><strong>Used when:</strong> You start logging signal data</li>
+        <li><strong>Notification:</strong> A persistent notification is shown while logging is active</li>
+    </ul>
+
+    <h2>Data Retention and Deletion</h2>
+    <ul>
+        <li>You can delete all logged data at any time using the "Clear Records" button in the App</li>
+        <li>You can manually delete log files from your device's file system</li>
+        <li>Data remains on your device until you delete it</li>
+        <li>Uninstalling the App will remove all App data from your device</li>
+    </ul>
+
+    <h2>Children's Privacy</h2>
+    <ul>
+        <li>The App is designed for use by individuals of all ages</li>
+        <li>We do not knowingly collect personal information from children under 13</li>
+        <li>Parents or guardians should supervise children's use of the App</li>
+    </ul>
+
+    <h2>Your Rights</h2>
+    <p>You have the right to:</p>
+    <ul>
+        <li>Access your data (stored locally on your device)</li>
+        <li>Delete your data through the App's settings or by deleting log files</li>
+        <li>Control app permissions through your device settings</li>
+        <li>Export your data in CSV or GPX format</li>
+        <li>Uninstall the App at any time</li>
+    </ul>
+
+    <h2>Third-Party Services</h2>
+    <p>The App uses the following third-party services:</p>
+    <ul>
+        <li><strong>OpenStreetMap (via osmdroid):</strong> For displaying maps. No personal data is sent to OpenStreetMap servers.</li>
+        <li><strong>Google Play Services Location:</strong> For GPS location services. Location data is processed locally and not transmitted.</li>
+    </ul>
+
+    <h2>Changes to This Privacy Policy</h2>
+    <p>We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy in the App and updating the "Last updated" date.</p>
+
+    <h2>Contact Us</h2>
+    <p>If you have questions about this Privacy Policy, please contact us at:<br>
+    Email: <a href="mailto:info@achievetherapy.com">info@achievetherapy.com</a></p>
+
+    <h2>Consent</h2>
+    <p>By using the App, you consent to this Privacy Policy.</p>
+
+    <p><a href="/">Back to Home</a></p>
+</body>
+</html>

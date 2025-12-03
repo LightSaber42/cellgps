@@ -43,7 +43,7 @@ class FileLogger(private val context: Context) {
         if (!file.exists()) {
             // Write GPX header
             file.writeText("""<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="SignalDriveLogger">
+<gpx version="1.1" creator="Cell Signal Logger">
     <trk>
         <name>Signal Drive Log</name>
         <trkseg>
@@ -90,7 +90,7 @@ class FileLogger(private val context: Context) {
         val file = File(recordsDir, "$filename.gpx")
 
         file.writeText("""<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="SignalDriveLogger">
+<gpx version="1.1" creator="Cell Signal Logger">
     <trk>
         <name>Signal Drive Log</name>
         <trkseg>
@@ -120,5 +120,31 @@ class FileLogger(private val context: Context) {
      */
     fun listLogFiles(): List<String> {
         return recordsDir.listFiles()?.map { it.name } ?: emptyList()
+    }
+
+    /**
+     * Reads a CSV file and returns the input stream.
+     */
+    suspend fun readCsvFile(fileUri: android.net.Uri, context: android.content.Context): java.io.InputStream? {
+        return try {
+            context.contentResolver.openInputStream(fileUri)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Reads a CSV file from a File path.
+     */
+    suspend fun readCsvFile(file: java.io.File): java.io.InputStream? {
+        return try {
+            if (file.exists() && file.canRead()) {
+                file.inputStream()
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
     }
 }
