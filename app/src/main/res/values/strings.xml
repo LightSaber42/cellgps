@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Signal Drive Logger</string>
+    <string name="start_logging">Start Logging</string>
+    <string name="stop_logging">Stop Logging</string>
+    <string name="view_map">View Map</string>
+    <string name="save_file">Save File</string>
+    <string name="export_file">Export/Share File</string>
+    <string name="signal_strength">Signal Strength</string>
+    <string name="network_type">Network Type</string>
+    <string name="cell_id">Cell ID</string>
+    <string name="current_signal">Current Signal</string>
+    <string name="no_signal_data">No signal data available</string>
+    <string name="permissions_required">Permissions Required</string>
+    <string name="permissions_message">This app needs location and phone state permissions to log signal data.</string>
+    <string name="grant_permissions">Grant Permissions</string>
+    <string name="logging_service_channel">Signal Logging Service</string>
+    <string name="logging_service_description">Foreground service for logging signal strength</string>
+</resources>
