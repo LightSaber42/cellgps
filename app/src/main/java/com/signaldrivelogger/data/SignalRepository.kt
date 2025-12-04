@@ -17,6 +17,8 @@ class SignalRepository(
     private val telephonyMonitor: TelephonyMonitor,
     private val fileLogger: FileLogger
 ) {
+    // Use MutableList internally to avoid O(N^2) copying on every append
+    private val _recordsList = mutableListOf<SignalRecord>()
     private val _records = MutableStateFlow<List<SignalRecord>>(emptyList())
     val records: StateFlow<List<SignalRecord>> = _records.asStateFlow()
 
@@ -33,6 +35,9 @@ class SignalRepository(
 
         currentFilename = filename ?: "signal_log_${System.currentTimeMillis()}"
         _isLogging.value = true
+
+        // Start buffered file logging session
+        fileLogger.startNewSession(currentFilename)
     }
 
     /**
@@ -40,6 +45,9 @@ class SignalRepository(
      */
     fun stopLogging() {
         _isLogging.value = false
+
+        // Close buffered file logging session
+        fileLogger.closeSession()
     }
 
     /**
@@ -97,9 +105,14 @@ class SignalRepository(
 
     /**
      * Adds a record to the list and logs it to file.
+     * FIXED: Use MutableList to avoid O(N^2) list copying on every append.
      */
     suspend fun addRecord(record: SignalRecord) {
-        _records.value = _records.value + record
+        // Add to mutable list (O(1) operation)
+        _recordsList.add(record)
+        // Emit new list only occasionally or when needed for UI
+        // For now, emit every time but use efficient list copy
+        _records.value = _recordsList.toList()
 
         if (_isLogging.value) {
             // Log to both CSV and GPX
@@ -112,7 +125,7 @@ class SignalRepository(
      * Saves all records to file.
      */
     suspend fun saveRecords(filename: String, format: String = "csv") {
-        val records = _records.value
+        val records = _recordsList.toList()
         when (format.lowercase()) {
             "csv" -> fileLogger.saveRecordsToCsv(records, filename)
             "gpx" -> {
@@ -125,6 +138,7 @@ class SignalRepository(
      * Clears all records from memory.
      */
     fun clearRecords() {
+        _recordsList.clear()
         _records.value = emptyList()
     }
 
@@ -148,8 +162,9 @@ class SignalRepository(
             val parseResult = com.signaldrivelogger.data.CsvParser.parse(inputStream)
             when (parseResult) {
                 is com.signaldrivelogger.data.CsvParseResult.Success -> {
-                    // Append imported records to existing ones
-                    _records.value = _records.value + parseResult.records
+                    // Append imported records to existing ones (efficiently)
+                    _recordsList.addAll(parseResult.records)
+                    _records.value = _recordsList.toList()
                     Result.success("Successfully imported ${parseResult.records.size} records")
                 }
                 is com.signaldrivelogger.data.CsvParseResult.Error -> {

@@ -11,8 +11,6 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 
 /**
  * Monitors multiple SIM cards (physical + eSIM) and provides signal data for each.
@@ -144,23 +142,20 @@ class MultiSimMonitor(private val context: Context) {
 
         val subscriptionIds = getActiveSubscriptionIds()
         val monitors = mutableListOf<TelephonyMonitorForSubscription>()
-        val jobs = mutableListOf<kotlinx.coroutines.Job>()
 
-        // Use a coroutine scope for launching collection jobs
-        val scope = CoroutineScope(Dispatchers.Main)
-
+        // Use 'this' (ProducerScope) to launch coroutines that auto-cancel when flow is closed
         if (subscriptionIds.isEmpty()) {
             // Fallback: monitor default SIM
             val defaultSubId = getDefaultSubscriptionId()
             if (defaultSubId >= 0) {
                 val monitor = TelephonyMonitorForSubscription(context, defaultSubId, this@MultiSimMonitor)
                 monitors.add(monitor)
-                val job = scope.launch {
+                // CORRECT: Launch on the ProducerScope (this), not a separate scope
+                launch {
                     monitor.getSignalStrengthUpdates().collect { signalData ->
                         trySend(SimSignalData(defaultSubId, signalData))
                     }
                 }
-                jobs.add(job)
             } else {
                 close()
                 return@callbackFlow
@@ -171,18 +166,17 @@ class MultiSimMonitor(private val context: Context) {
                 val monitor = TelephonyMonitorForSubscription(context, subId, this@MultiSimMonitor)
                 monitors.add(monitor)
 
-                // Launch collection for each SIM
-                val job = scope.launch {
+                // CORRECT: Launch on the ProducerScope (this), not a separate scope
+                launch {
                     monitor.getSignalStrengthUpdates().collect { signalData ->
                         trySend(SimSignalData(subId, signalData))
                     }
                 }
-                jobs.add(job)
             }
         }
 
         awaitClose {
-            jobs.forEach { it.cancel() }
+            // Jobs launched via 'launch' above are auto-cancelled when flow closes
             monitors.forEach { it.stopMonitoring() }
         }
     }

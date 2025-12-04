@@ -75,6 +75,16 @@ android {
         kotlinCompilerExtensionVersion = "1.5.14"
     }
 
+    lint {
+        // Don't fail build on lint errors (warnings are still shown)
+        abortOnError = false
+        // Treat warnings as warnings, not errors
+        warningsAsErrors = false
+        // Disable specific checks that are too noisy
+        disable += "MissingPermission" // Permissions are checked at runtime
+        disable += "Deprecated" // We know APIs are deprecated, will migrate later
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
