@@ -25,7 +25,8 @@ class FileLogger(private val context: Context) {
         val file = File(recordsDir, "$filename.csv")
         val header = "timestamp,latitude,longitude,altitude_m,signal_strength_dbm,cell_id,data_rate_kbps,network_type,asu," +
                 "data_state,data_activity,roaming,sim_state,sim_operator_name,sim_mcc,sim_mnc," +
-                "operator_name,mcc,mnc,phone_type,sim_slot_index,subscription_id,sim_display_name,is_embedded\n"
+                "operator_name,mcc,mnc,phone_type,sim_slot_index,subscription_id,sim_display_name,is_embedded," +
+                "ci,enb,tac,pci,bandwidth_khz,earfcn,nrarfcn,rssi_dbm,rsrq_db,snr_db,cqi,timing_advance\n"
 
         if (!file.exists()) {
             file.writeText(header)
@@ -75,7 +76,8 @@ class FileLogger(private val context: Context) {
         val file = File(recordsDir, "$filename.csv")
         val header = "timestamp,latitude,longitude,altitude_m,signal_strength_dbm,cell_id,data_rate_kbps,network_type,asu," +
                 "data_state,data_activity,roaming,sim_state,sim_operator_name,sim_mcc,sim_mnc," +
-                "operator_name,mcc,mnc,phone_type,sim_slot_index,subscription_id,sim_display_name,is_embedded\n"
+                "operator_name,mcc,mnc,phone_type,sim_slot_index,subscription_id,sim_display_name,is_embedded," +
+                "ci,enb,tac,pci,bandwidth_khz,earfcn,nrarfcn,rssi_dbm,rsrq_db,snr_db,cqi,timing_advance\n"
 
         file.writeText(header)
         records.forEach { record ->

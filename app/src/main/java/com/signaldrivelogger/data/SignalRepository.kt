@@ -79,7 +79,19 @@ class SignalRepository(
             simSlotIndex = simSlotIndex,
             subscriptionId = subscriptionId,
             simDisplayName = simDisplayName,
-            isEmbedded = isEmbedded
+            isEmbedded = isEmbedded,
+            ci = signalData.ci,
+            enb = signalData.enb,
+            tac = signalData.tac,
+            pci = signalData.pci,
+            bandwidth = signalData.bandwidth,
+            earfcn = signalData.earfcn,
+            nrarfcn = signalData.nrarfcn,
+            rssi = signalData.rssi,
+            rsrq = signalData.rsrq,
+            snr = signalData.snr,
+            cqi = signalData.cqi,
+            timingAdvance = signalData.timingAdvance
         )
     }
 

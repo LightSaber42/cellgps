@@ -1,0 +1,88 @@
+# Repomix Configuration for Cell Signal Logger
+# This config exports all source code while excluding build artifacts
+
+include:
+  # Source code
+  - "**/*.kt"
+  - "**/*.kts"
+  - "**/*.xml"
+
+  # Build configuration
+  - "**/*.gradle"
+  - "gradlew"
+  - "gradlew.bat"
+  - "gradle/wrapper/gradle-wrapper.properties"
+  - "gradle.properties"
+  - "settings.gradle.kts"
+  - "build.gradle.kts"
+  - "app/build.gradle.kts"
+  - "app/proguard-rules.pro"
+
+  # Documentation
+  - "**/*.md"
+  - "**/*.html"
+
+  # Scripts
+  - "**/*.ps1"
+
+  # Configuration examples
+  - "keystore.properties.example"
+  - ".gitignore"
+
+exclude:
+  # Build artifacts
+  - "**/build/**"
+  - "**/.gradle/**"
+  - "**/out/**"
+  - "**/bin/**"
+  - "**/gen/**"
+  - "**/release/**"
+  - "**/debug/**"
+
+  # IDE files
+  - "**/.idea/**"
+  - "**/*.iml"
+  - "**/.externalNativeBuild/**"
+  - "**/.cxx/**"
+
+  # Sensitive files
+  - "local.properties"
+  - "keystore.properties"
+  - "**/*.jks"
+  - "**/*.keystore"
+  - "cell-signal-logger-release.jks"
+
+  # Generated files
+  - "**/generated/**"
+  - "**/intermediates/**"
+  - "**/outputs/**"
+  - "**/tmp/**"
+  - "**/kotlinToolingMetadata/**"
+  - "**/kotlin/**"
+
+  # Test data and screenshots
+  - "**/screenshots/**"
+  - "**/*.csv"
+
+  # Logs and error files
+  - "**/*.log"
+  - "build-error.txt"
+  - "build-errors.txt"
+  - "compile-errors.txt"
+  - "kotlin-errors.txt"
+  - "repomix-output.txt"
+
+  # Binary files
+  - "**/*.apk"
+  - "**/*.aab"
+  - "**/*.ap_"
+  - "**/*.dex"
+  - "**/*.class"
+  - "**/*.jar"
+  - "gradle/wrapper/gradle-wrapper.jar"
+
+  # Git
+  - "**/.git/**"
+
+outputPath: "./repomix-output"
+ignoreGitignore: false

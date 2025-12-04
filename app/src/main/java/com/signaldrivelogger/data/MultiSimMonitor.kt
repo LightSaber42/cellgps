@@ -245,9 +245,14 @@ private class TelephonyMonitorForSubscription(
         var updateRunnable: Runnable? = null
 
         fun emitSignalData() {
+            val cellInfo = getCurrentCellInfo()
             val signalStrength = getCurrentSignalStrength() ?: return
             val cellId = getCurrentCellId() ?: 0
             val networkType = getCurrentNetworkType()
+
+            // Extract detailed cell information
+            val (ci, enb, tac, pci, bandwidth, earfcn, nrarfcn, rssi, rsrq, snr, cqi, timingAdvance) =
+                extractCellDetails(cellInfo)
 
             val signalData = SignalData(
                 signalStrength = signalStrength,
@@ -263,7 +268,19 @@ private class TelephonyMonitorForSubscription(
                 operatorName = getOperatorName(),
                 mcc = getMcc(),
                 mnc = getMnc(),
-                phoneType = getPhoneType()
+                phoneType = getPhoneType(),
+                ci = ci,
+                enb = enb,
+                tac = tac,
+                pci = pci,
+                bandwidth = bandwidth,
+                earfcn = earfcn,
+                nrarfcn = nrarfcn,
+                rssi = rssi,
+                rsrq = rsrq,
+                snr = snr,
+                cqi = cqi,
+                timingAdvance = timingAdvance
             )
 
             trySend(signalData)
@@ -317,16 +334,116 @@ private class TelephonyMonitorForSubscription(
 
     private fun getCurrentCellId(): Int? {
         return try {
-            val cellLocation = telephonyManager?.cellLocation
-            when (cellLocation) {
-                is android.telephony.gsm.GsmCellLocation -> cellLocation.cid
-                is android.telephony.cdma.CdmaCellLocation -> cellLocation.baseStationId
-                else -> null
+            // Try to get from CellInfo first (more accurate)
+            val cellInfo = getCurrentCellInfo()
+            when (cellInfo) {
+                is android.telephony.CellInfoLte -> {
+                    val cellIdentity = cellInfo.cellIdentity as android.telephony.CellIdentityLte
+                    val ci = cellIdentity.ci
+                    if (ci != android.telephony.CellInfo.UNAVAILABLE) ci else null
+                }
+                is android.telephony.CellInfoNr -> {
+                    val cellIdentity = cellInfo.cellIdentity as android.telephony.CellIdentityNr
+                    val nci = cellIdentity.nci
+                    val unavailableLong = android.telephony.CellInfo.UNAVAILABLE.toLong()
+                    if (nci != unavailableLong) nci.toInt() else null
+                }
+                else -> {
+                    // Fallback to cellLocation
+                    val cellLocation = telephonyManager?.cellLocation
+                    when (cellLocation) {
+                        is android.telephony.gsm.GsmCellLocation -> cellLocation.cid
+                        is android.telephony.cdma.CdmaCellLocation -> cellLocation.baseStationId
+                        else -> null
+                    }
+                }
             }
         } catch (e: Exception) {
             null
         }
     }
+
+    private fun getCurrentCellInfo(): android.telephony.CellInfo? {
+        return try {
+            telephonyManager?.allCellInfo?.firstOrNull()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun extractCellDetails(cellInfo: android.telephony.CellInfo?): CellDetails {
+        if (cellInfo == null) {
+            return CellDetails(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        }
+
+        return try {
+            when (cellInfo) {
+                is android.telephony.CellInfoLte -> {
+                    val cellIdentity = cellInfo.cellIdentity as android.telephony.CellIdentityLte
+                    val signalStrength = cellInfo.cellSignalStrength as android.telephony.CellSignalStrengthLte
+
+                    // Calculate eNodeB ID from CI (Cell Identity)
+                    // eNodeB ID is the upper 20 bits of the 28-bit CI
+                    val ci = if (cellIdentity.ci != android.telephony.CellInfo.UNAVAILABLE) cellIdentity.ci else 0
+                    val enb = if (ci != 0) (ci shr 8) else 0 // Extract upper 20 bits (shift right by 8 bits)
+
+                    CellDetails(
+                        ci = ci,
+                        enb = enb,
+                        tac = if (cellIdentity.tac != android.telephony.CellInfo.UNAVAILABLE) cellIdentity.tac else 0,
+                        pci = if (cellIdentity.pci != android.telephony.CellInfo.UNAVAILABLE) cellIdentity.pci else 0,
+                        bandwidth = if (cellIdentity.bandwidth != android.telephony.CellInfo.UNAVAILABLE) cellIdentity.bandwidth else 0,
+                        earfcn = if (cellIdentity.earfcn != android.telephony.CellInfo.UNAVAILABLE) cellIdentity.earfcn else 0,
+                        nrarfcn = 0, // Not applicable for LTE
+                        rssi = if (signalStrength.rssi != android.telephony.CellInfo.UNAVAILABLE) signalStrength.rssi else 0,
+                        rsrq = if (signalStrength.rsrq != android.telephony.CellInfo.UNAVAILABLE) signalStrength.rsrq else 0,
+                        snr = if (signalStrength.rssnr != android.telephony.CellInfo.UNAVAILABLE) signalStrength.rssnr else 0,
+                        cqi = if (signalStrength.cqi != android.telephony.CellInfo.UNAVAILABLE) signalStrength.cqi else 0,
+                        timingAdvance = if (signalStrength.timingAdvance != android.telephony.CellInfo.UNAVAILABLE) signalStrength.timingAdvance else 0
+                    )
+                }
+                is android.telephony.CellInfoNr -> {
+                    val cellIdentity = cellInfo.cellIdentity as android.telephony.CellIdentityNr
+                    val signalStrength = cellInfo.cellSignalStrength as android.telephony.CellSignalStrengthNr
+
+                    val unavailableLong = android.telephony.CellInfo.UNAVAILABLE.toLong()
+
+                    CellDetails(
+                        ci = if (cellIdentity.nci != unavailableLong) cellIdentity.nci.toInt() else 0,
+                        enb = 0, // Not applicable for 5G NR
+                        tac = if (cellIdentity.tac != android.telephony.CellInfo.UNAVAILABLE) cellIdentity.tac else 0,
+                        pci = if (cellIdentity.pci != android.telephony.CellInfo.UNAVAILABLE) cellIdentity.pci else 0,
+                        bandwidth = 0, // Not directly available in CellInfoNr
+                        earfcn = 0, // Not applicable for 5G NR
+                        nrarfcn = if (cellIdentity.nrarfcn != android.telephony.CellInfo.UNAVAILABLE) cellIdentity.nrarfcn else 0,
+                        rssi = 0, // Not directly available in CellSignalStrengthNr
+                        rsrq = if (signalStrength.csiRsrq != android.telephony.CellInfo.UNAVAILABLE) signalStrength.csiRsrq else 0,
+                        snr = if (signalStrength.csiSinr != android.telephony.CellInfo.UNAVAILABLE) signalStrength.csiSinr else 0,
+                        cqi = 0, // Not directly available in CellSignalStrengthNr
+                        timingAdvance = 0 // Not directly available in CellSignalStrengthNr
+                    )
+                }
+                else -> CellDetails(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            }
+        } catch (e: Exception) {
+            CellDetails(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        }
+    }
+
+    private data class CellDetails(
+        val ci: Int,
+        val enb: Int,
+        val tac: Int,
+        val pci: Int,
+        val bandwidth: Int,
+        val earfcn: Int,
+        val nrarfcn: Int,
+        val rssi: Int,
+        val rsrq: Int,
+        val snr: Int,
+        val cqi: Int,
+        val timingAdvance: Int
+    )
 
     private fun getCurrentNetworkType(): String {
         return try {

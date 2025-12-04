@@ -427,7 +427,7 @@ class TelephonyMonitor(private val context: Context) {
  * Data class for signal information with extended cell details.
  */
 data class SignalData(
-    val signalStrength: Int, // dBm
+    val signalStrength: Int, // RSRP in dBm
     val cellId: Int,
     val networkType: String,
     val dataState: String = "Unknown",
@@ -440,5 +440,18 @@ data class SignalData(
     val operatorName: String = "",
     val mcc: String = "",
     val mnc: String = "",
-    val phoneType: String = "Unknown"
+    val phoneType: String = "Unknown",
+    // LTE/5G cell details
+    val ci: Int = 0, // Cell Identity
+    val enb: Int = 0, // eNodeB ID
+    val tac: Int = 0, // Tracking Area Code
+    val pci: Int = 0, // Physical Cell ID
+    val bandwidth: Int = 0, // Bandwidth in kHz
+    val earfcn: Int = 0, // E-UTRA Absolute Radio Frequency Channel Number (LTE)
+    val nrarfcn: Int = 0, // NR Absolute Radio Frequency Channel Number (5G)
+    val rssi: Int = 0, // Received Signal Strength Indicator in dBm
+    val rsrq: Int = 0, // Reference Signal Received Quality in dB
+    val snr: Int = 0, // Signal-to-Noise Ratio in dB
+    val cqi: Int = 0, // Channel Quality Indicator
+    val timingAdvance: Int = 0 // Timing Advance
 )

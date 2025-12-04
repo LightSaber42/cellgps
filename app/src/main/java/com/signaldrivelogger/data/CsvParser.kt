@@ -17,13 +17,19 @@ sealed class CsvParseResult {
  */
 class CsvParser {
     companion object {
-        // Expected CSV header
-        private val EXPECTED_HEADER = listOf(
+        // Expected CSV header (base fields)
+        private val BASE_HEADER = listOf(
             "timestamp", "latitude", "longitude", "altitude_m", "signal_strength_dbm",
             "cell_id", "data_rate_kbps", "network_type", "asu",
             "data_state", "data_activity", "roaming", "sim_state", "sim_operator_name",
             "sim_mcc", "sim_mnc", "operator_name", "mcc", "mnc", "phone_type",
             "sim_slot_index", "subscription_id", "sim_display_name", "is_embedded"
+        )
+
+        // Extended CSV header (with new cell details)
+        private val EXTENDED_HEADER = BASE_HEADER + listOf(
+            "ci", "enb", "tac", "pci", "bandwidth_khz", "earfcn", "nrarfcn",
+            "rssi_dbm", "rsrq_db", "snr_db", "cqi", "timing_advance"
         )
 
         /**
@@ -36,29 +42,34 @@ class CsvParser {
                     return CsvParseResult.Error("CSV file is empty")
                 }
 
-                // Validate header
+                // Validate header - support both old and new formats
                 val header = lines[0].split(",").map { it.trim() }
-                if (header.size != EXPECTED_HEADER.size) {
+                val headerLower = header.map { it.lowercase() }
+                val baseHeaderLower = BASE_HEADER.map { it.lowercase() }
+                val extendedHeaderLower = EXTENDED_HEADER.map { it.lowercase() }
+
+                val isExtendedFormat = header.size == EXTENDED_HEADER.size
+                val isBaseFormat = header.size == BASE_HEADER.size
+
+                if (!isExtendedFormat && !isBaseFormat) {
                     return CsvParseResult.Error(
-                        "Invalid CSV format: Expected ${EXPECTED_HEADER.size} columns, found ${header.size}",
+                        "Invalid CSV format: Expected ${BASE_HEADER.size} or ${EXTENDED_HEADER.size} columns, found ${header.size}",
                         lineNumber = 1
                     )
                 }
 
-                // Check if header matches (case-insensitive, allow some flexibility)
-                val headerLower = header.map { it.lowercase() }
-                val expectedLower = EXPECTED_HEADER.map { it.lowercase() }
-                if (headerLower != expectedLower) {
-                    // Try to match column by column for better error message
-                    val mismatches = headerLower.zip(expectedLower)
+                // Check if base header matches (case-insensitive)
+                val baseMatches = headerLower.take(BASE_HEADER.size) == baseHeaderLower
+                if (!baseMatches) {
+                    val mismatches = headerLower.take(BASE_HEADER.size).zip(baseHeaderLower)
                         .mapIndexedNotNull { index, (actual, expected) ->
                             if (actual != expected) index else null
                         }
                     if (mismatches.isNotEmpty()) {
                         return CsvParseResult.Error(
-                            "Invalid CSV header: Columns don't match expected format at positions ${mismatches.joinToString()}. " +
-                                    "Expected: ${EXPECTED_HEADER.joinToString()}, " +
-                                    "Found: ${header.joinToString()}",
+                            "Invalid CSV header: Base columns don't match expected format at positions ${mismatches.joinToString()}. " +
+                                    "Expected base: ${BASE_HEADER.joinToString()}, " +
+                                    "Found: ${header.take(BASE_HEADER.size).joinToString()}",
                             lineNumber = 1
                         )
                     }
@@ -66,11 +77,12 @@ class CsvParser {
 
                 // Parse data rows
                 val records = mutableListOf<SignalRecord>()
+                val hasExtendedFields = header.size == EXTENDED_HEADER.size
                 for (i in 1 until lines.size) {
                     val line = lines[i].trim()
                     if (line.isEmpty()) continue // Skip empty lines
 
-                    val parseResult = parseRow(line, i + 1)
+                    val parseResult = parseRow(line, i + 1, hasExtendedFields)
                     when (parseResult) {
                         is CsvParseResult.Success -> {
                             records.add(parseResult.records.first())
@@ -94,14 +106,15 @@ class CsvParser {
         /**
          * Parses a single CSV row.
          */
-        private fun parseRow(line: String, lineNumber: Int): CsvParseResult {
+        private fun parseRow(line: String, lineNumber: Int, hasExtendedFields: Boolean): CsvParseResult {
             try {
                 // Handle quoted fields and commas within quotes
                 val fields = parseCsvLine(line)
 
-                if (fields.size != EXPECTED_HEADER.size) {
+                val expectedSize = if (hasExtendedFields) EXTENDED_HEADER.size else BASE_HEADER.size
+                if (fields.size != expectedSize) {
                     return CsvParseResult.Error(
-                        "Invalid row: Expected ${EXPECTED_HEADER.size} columns, found ${fields.size}",
+                        "Invalid row: Expected $expectedSize columns, found ${fields.size}",
                         lineNumber = lineNumber
                     )
                 }
@@ -219,6 +232,44 @@ class CsvParser {
                     fields[23].lowercase() == "true"
                 }
 
+                // Parse extended fields if available, otherwise use defaults
+                val ci = if (hasExtendedFields && fields.size > 24) {
+                    fields[24].toIntOrNull() ?: 0
+                } else 0
+                val enb = if (hasExtendedFields && fields.size > 25) {
+                    fields[25].toIntOrNull() ?: 0
+                } else 0
+                val tac = if (hasExtendedFields && fields.size > 26) {
+                    fields[26].toIntOrNull() ?: 0
+                } else 0
+                val pci = if (hasExtendedFields && fields.size > 27) {
+                    fields[27].toIntOrNull() ?: 0
+                } else 0
+                val bandwidth = if (hasExtendedFields && fields.size > 28) {
+                    fields[28].toIntOrNull() ?: 0
+                } else 0
+                val earfcn = if (hasExtendedFields && fields.size > 29) {
+                    fields[29].toIntOrNull() ?: 0
+                } else 0
+                val nrarfcn = if (hasExtendedFields && fields.size > 30) {
+                    fields[30].toIntOrNull() ?: 0
+                } else 0
+                val rssi = if (hasExtendedFields && fields.size > 31) {
+                    fields[31].toIntOrNull() ?: 0
+                } else 0
+                val rsrq = if (hasExtendedFields && fields.size > 32) {
+                    fields[32].toIntOrNull() ?: 0
+                } else 0
+                val snr = if (hasExtendedFields && fields.size > 33) {
+                    fields[33].toIntOrNull() ?: 0
+                } else 0
+                val cqi = if (hasExtendedFields && fields.size > 34) {
+                    fields[34].toIntOrNull() ?: 0
+                } else 0
+                val timingAdvance = if (hasExtendedFields && fields.size > 35) {
+                    fields[35].toIntOrNull() ?: 0
+                } else 0
+
                 val record = SignalRecord(
                     timestamp = timestamp,
                     latitude = latitude,
@@ -243,7 +294,19 @@ class CsvParser {
                     simSlotIndex = simSlotIndex,
                     subscriptionId = subscriptionId,
                     simDisplayName = simDisplayName,
-                    isEmbedded = isEmbedded
+                    isEmbedded = isEmbedded,
+                    ci = ci,
+                    enb = enb,
+                    tac = tac,
+                    pci = pci,
+                    bandwidth = bandwidth,
+                    earfcn = earfcn,
+                    nrarfcn = nrarfcn,
+                    rssi = rssi,
+                    rsrq = rsrq,
+                    snr = snr,
+                    cqi = cqi,
+                    timingAdvance = timingAdvance
                 )
 
                 return CsvParseResult.Success(listOf(record))

@@ -31,7 +31,20 @@ data class SignalRecord(
     val simSlotIndex: Int = 0, // 0, 1, 2, etc.
     val subscriptionId: Int = -1, // Subscription ID
     val simDisplayName: String = "", // Display name for the SIM
-    val isEmbedded: Boolean = false // true for eSIM, false for physical SIM
+    val isEmbedded: Boolean = false, // true for eSIM, false for physical SIM
+    // LTE/5G cell details
+    val ci: Int = 0, // Cell Identity
+    val enb: Int = 0, // eNodeB ID
+    val tac: Int = 0, // Tracking Area Code
+    val pci: Int = 0, // Physical Cell ID
+    val bandwidth: Int = 0, // Bandwidth in kHz
+    val earfcn: Int = 0, // E-UTRA Absolute Radio Frequency Channel Number (LTE)
+    val nrarfcn: Int = 0, // NR Absolute Radio Frequency Channel Number (5G)
+    val rssi: Int = 0, // Received Signal Strength Indicator in dBm
+    val rsrq: Int = 0, // Reference Signal Received Quality in dB
+    val snr: Int = 0, // Signal-to-Noise Ratio in dB
+    val cqi: Int = 0, // Channel Quality Indicator
+    val timingAdvance: Int = 0 // Timing Advance
 ) {
     /**
      * Converts signal strength to a normalized value (0.0 to 1.0) for color mapping.
@@ -50,7 +63,8 @@ data class SignalRecord(
     fun toCsvRow(): String {
         return "${timestamp.toEpochMilli()},$latitude,$longitude,$altitude,$signalStrength,$cellId,$dataRateKbps,$networkType,$asu," +
                 "$dataState,$dataActivity,$isRoaming,$simState,\"$simOperatorName\",$simMcc,$simMnc,\"$operatorName\",$mcc,$mnc,$phoneType," +
-                "$simSlotIndex,$subscriptionId,\"$simDisplayName\",$isEmbedded"
+                "$simSlotIndex,$subscriptionId,\"$simDisplayName\",$isEmbedded," +
+                "$ci,$enb,$tac,$pci,$bandwidth,$earfcn,$nrarfcn,$rssi,$rsrq,$snr,$cqi,$timingAdvance"
     }
 
     /**
@@ -82,6 +96,18 @@ data class SignalRecord(
                     <signal:subscriptionId>$subscriptionId</signal:subscriptionId>
                     <signal:simDisplayName>$simDisplayName</signal:simDisplayName>
                     <signal:isEmbedded>$isEmbedded</signal:isEmbedded>
+                    <signal:ci>$ci</signal:ci>
+                    <signal:enb>$enb</signal:enb>
+                    <signal:tac>$tac</signal:tac>
+                    <signal:pci>$pci</signal:pci>
+                    <signal:bandwidth>$bandwidth</signal:bandwidth>
+                    <signal:earfcn>$earfcn</signal:earfcn>
+                    <signal:nrarfcn>$nrarfcn</signal:nrarfcn>
+                    <signal:rssi>$rssi</signal:rssi>
+                    <signal:rsrq>$rsrq</signal:rsrq>
+                    <signal:snr>$snr</signal:snr>
+                    <signal:cqi>$cqi</signal:cqi>
+                    <signal:timingAdvance>$timingAdvance</signal:timingAdvance>
                 </extensions>
             </trkpt>
         """.trimIndent()
