@@ -216,8 +216,9 @@ private fun updateMapWithRecords(mapView: MapView, records: List<SignalRecord>) 
             addPoint(GeoPoint(record2.latitude, record2.longitude))
 
             val color = getSignalColorAndroid(record1.signalStrength)
-            paint.color = color
-            width = 12f
+            // Use outlinePaint for osmdroid 6.1.17+ (paint is deprecated)
+            outlinePaint.color = color
+            outlinePaint.strokeWidth = 12f
         }
 
         mapView.overlays.add(polyline)

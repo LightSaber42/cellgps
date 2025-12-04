@@ -73,7 +73,9 @@ class LoggingService : Service() {
     private fun startLogging() {
         val filename = currentIntent?.getStringExtra(EXTRA_FILENAME) ?: "signal_log_${System.currentTimeMillis()}"
         signalRepository.setFilename(filename)
-        signalRepository.startLogging(filename)
+        serviceScope.launch {
+            signalRepository.startLogging(filename)
+        }
 
         // Start location updates
         locationProvider.getLocationUpdates()
@@ -97,12 +99,14 @@ class LoggingService : Service() {
     }
 
     private fun stopLogging() {
-        signalRepository.stopLogging()
+        serviceScope.launch {
+            signalRepository.stopLogging()
+        }
         locationProvider.stopLocationUpdates()
         telephonyMonitor.stopMonitoring()
         currentSignalDataBySim.clear()
 
-        // Finalize GPX file
+        // Finalize GPX file (now handled by stopLogging -> closeSession)
         serviceScope.launch {
             fileLogger.finalizeGpx(signalRepository.getCurrentFilename())
         }

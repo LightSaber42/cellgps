@@ -30,23 +30,23 @@ class SignalRepository(
     /**
      * Starts logging by combining location and signal updates.
      */
-    fun startLogging(filename: String? = null) {
+    suspend fun startLogging(filename: String? = null) {
         if (_isLogging.value) return
 
         currentFilename = filename ?: "signal_log_${System.currentTimeMillis()}"
         _isLogging.value = true
 
-        // Start buffered file logging session
+        // Start buffered file logging session (now suspend function)
         fileLogger.startNewSession(currentFilename)
     }
 
     /**
      * Stops logging.
      */
-    fun stopLogging() {
+    suspend fun stopLogging() {
         _isLogging.value = false
 
-        // Close buffered file logging session
+        // Close buffered file logging session (now suspend function)
         fileLogger.closeSession()
     }
 

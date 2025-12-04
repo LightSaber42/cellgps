@@ -4,6 +4,8 @@ import android.content.Context
 import com.signaldrivelogger.domain.models.SignalRecord
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.FileWriter
 import java.time.Instant
@@ -21,14 +23,18 @@ class FileLogger(private val context: Context) {
     private var currentFilename: String? = null
     private val headerWritten = mutableSetOf<String>() // Track which files have headers
 
+    // Mutex for thread-safe writes (BufferedWriter is not thread-safe)
+    private val writeMutex = Mutex()
+
     init {
         recordsDir.mkdirs()
     }
 
     /**
      * Starts a new logging session with buffered writers.
+     * Must be called from within writeMutex.withLock for thread safety.
      */
-    fun startNewSession(filename: String) {
+    private fun startNewSessionUnsafe(filename: String) {
         currentFilename = filename
         val csvFile = File(recordsDir, "$filename.csv")
         val gpxFile = File(recordsDir, "$filename.gpx")
@@ -62,14 +68,15 @@ class FileLogger(private val context: Context) {
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            closeSession() // Clean up on error
+            closeSessionUnsafe() // Clean up on error
         }
     }
 
     /**
      * Closes the logging session and flushes all buffers.
+     * Must be called from within writeMutex.withLock for thread safety.
      */
-    fun closeSession() {
+    private fun closeSessionUnsafe() {
         try {
             // Finalize GPX
             gpxWriter?.write("        </trkseg>\n    </trk>\n</gpx>\n")
@@ -89,62 +96,88 @@ class FileLogger(private val context: Context) {
     }
 
     /**
-     * Logs a record to CSV file using buffered writer (optimized).
+     * Starts a new logging session with buffered writers (thread-safe).
+     */
+    suspend fun startNewSession(filename: String) = withContext(Dispatchers.IO) {
+        writeMutex.withLock {
+            startNewSessionUnsafe(filename)
+        }
+    }
+
+    /**
+     * Closes the logging session and flushes all buffers (thread-safe).
+     */
+    suspend fun closeSession() = withContext(Dispatchers.IO) {
+        writeMutex.withLock {
+            closeSessionUnsafe()
+        }
+    }
+
+    /**
+     * Logs a record to CSV file using buffered writer (optimized, thread-safe).
      */
     suspend fun logToCsv(record: SignalRecord, filename: String) = withContext(Dispatchers.IO) {
-        // If session not started or filename changed, start new session
-        if (csvWriter == null || currentFilename != filename) {
-            closeSession() // Close previous session if any
-            startNewSession(filename)
-        }
+        // Wrap all file operations in mutex to prevent concurrent writes
+        writeMutex.withLock {
+            // If session not started or filename changed, start new session
+            if (csvWriter == null || currentFilename != filename) {
+                closeSessionUnsafe() // Close previous session if any
+                startNewSessionUnsafe(filename)
+            }
 
-        try {
-            csvWriter?.write("${record.toCsvRow()}\n")
-            // Flush periodically (every 10 records) instead of every record
-            // For now, flush every record to ensure data safety, but this is much faster than appendText
-        } catch (e: Exception) {
-            e.printStackTrace()
+            try {
+                csvWriter?.write("${record.toCsvRow()}\n")
+                // Flush periodically (every 10 records) instead of every record
+                // For now, flush every record to ensure data safety, but this is much faster than appendText
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
     /**
-     * Logs a record to GPX file using buffered writer (optimized).
+     * Logs a record to GPX file using buffered writer (optimized, thread-safe).
      */
     suspend fun logToGpx(record: SignalRecord, filename: String) = withContext(Dispatchers.IO) {
-        // If session not started or filename changed, start new session
-        if (gpxWriter == null || currentFilename != filename) {
-            closeSession() // Close previous session if any
-            startNewSession(filename)
-        }
+        // Wrap all file operations in mutex to prevent concurrent writes
+        writeMutex.withLock {
+            // If session not started or filename changed, start new session
+            if (gpxWriter == null || currentFilename != filename) {
+                closeSessionUnsafe() // Close previous session if any
+                startNewSessionUnsafe(filename)
+            }
 
-        try {
-            val trackpoint = record.toGpxTrackpoint()
-            gpxWriter?.write("            $trackpoint\n")
-        } catch (e: Exception) {
-            e.printStackTrace()
+            try {
+                val trackpoint = record.toGpxTrackpoint()
+                gpxWriter?.write("            $trackpoint\n")
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
     /**
-     * Finalizes GPX file by closing the XML tags and closing the session.
+     * Finalizes GPX file by closing the XML tags and closing the session (thread-safe).
      */
     suspend fun finalizeGpx(filename: String) = withContext(Dispatchers.IO) {
-        // If this is the current session, close it properly
-        if (currentFilename == filename) {
-            closeSession()
-        } else {
-            // If file exists but session wasn't active, append closing tags
-            val file = File(recordsDir, "$filename.gpx")
-            if (file.exists()) {
-                try {
-                    java.io.FileWriter(file, true).use { writer ->
-                        writer.write("""        </trkseg>
+        writeMutex.withLock {
+            // If this is the current session, close it properly
+            if (currentFilename == filename) {
+                closeSessionUnsafe()
+            } else {
+                // If file exists but session wasn't active, append closing tags
+                val file = File(recordsDir, "$filename.gpx")
+                if (file.exists()) {
+                    try {
+                        java.io.FileWriter(file, true).use { writer ->
+                            writer.write("""        </trkseg>
     </trk>
 </gpx>
 """)
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
                 }
             }
         }
