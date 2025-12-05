@@ -281,11 +281,11 @@ class SignalRepository(
 
     /**
      * Clears all records from database (use with caution).
+     * Deletes all records regardless of session to ensure UI statistics are reset.
      */
     suspend fun clearRecords() {
-        currentSessionId?.let { sessionId ->
-            signalRecordDao.deleteRecordsBySession(sessionId)
-        }
+        // Delete all records, not just current session, to ensure UI updates properly
+        signalRecordDao.deleteAllRecords()
     }
 
     /**

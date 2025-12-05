@@ -75,6 +75,12 @@ interface SignalRecordDao {
     suspend fun deleteRecordsBySession(sessionId: String): Int
 
     /**
+     * Delete all records from the database.
+     */
+    @Query("DELETE FROM signal_logs")
+    suspend fun deleteAllRecords(): Int
+
+    /**
      * Get count of records for a session.
      */
     @Query("SELECT COUNT(*) FROM signal_logs WHERE session_id = :sessionId")
