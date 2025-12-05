@@ -47,6 +47,8 @@ class LoggingService : Service() {
 
     // WakeLock to keep CPU awake during logging
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wakeLockRefreshJob: kotlinx.coroutines.Job? = null
+    private var isLoggingActive = false
 
     override fun onCreate() {
         super.onCreate()
@@ -82,8 +84,22 @@ class LoggingService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun startLogging() {
-        // Acquire WakeLock to keep CPU awake during logging (10 hour safety timeout)
-        wakeLock?.acquire(10 * 60 * 60 * 1000L)
+        isLoggingActive = true
+
+        // Acquire WakeLock with timeout-based refresh (Phase 1.3)
+        // Refresh every 30 minutes instead of hardcoded 10 hours
+        wakeLock?.acquire(30 * 60 * 1000L) // 30 minutes
+
+        // Start periodic refresh job
+        wakeLockRefreshJob = serviceScope.launch {
+            while (isLoggingActive) {
+                kotlinx.coroutines.delay(25 * 60 * 1000L) // Refresh every 25 minutes
+                if (isLoggingActive && wakeLock?.isHeld == true) {
+                    wakeLock?.release()
+                    wakeLock?.acquire(30 * 60 * 1000L)
+                }
+            }
+        }
 
         val filename = currentIntent?.getStringExtra(EXTRA_FILENAME) ?: "signal_log_${System.currentTimeMillis()}"
         signalRepository.setFilename(filename)
@@ -113,6 +129,10 @@ class LoggingService : Service() {
     }
 
     private fun stopLogging() {
+        isLoggingActive = false
+        wakeLockRefreshJob?.cancel()
+        wakeLockRefreshJob = null
+
         // Stop collecting first
         locationProvider.stopLocationUpdates()
         telephonyMonitor.stopMonitoring()
@@ -130,7 +150,7 @@ class LoggingService : Service() {
             updateNotification("Logging stopped")
             stopForeground(STOP_FOREGROUND_REMOVE)
 
-            // Release WakeLock
+            // Release WakeLock immediately (Phase 1.3)
             if (wakeLock?.isHeld == true) {
                 wakeLock?.release()
             }
@@ -150,7 +170,6 @@ class LoggingService : Service() {
             val record = signalRepository.createRecord(
                 location = location,
                 signalData = signalData,
-                dataRate = estimateDataRateForNetwork(signalData.networkType, signalData.signalStrength),
                 simSlotIndex = simSlotIndex,
                 subscriptionId = subscriptionId,
                 simDisplayName = simDisplayName,
@@ -160,28 +179,6 @@ class LoggingService : Service() {
             record?.let {
                 signalRepository.addRecord(it)
             }
-        }
-    }
-
-    private fun estimateDataRateForNetwork(networkType: String, signalStrength: Int): Int {
-        return when (networkType) {
-            "5G" -> {
-                when {
-                    signalStrength > -70 -> 50000
-                    signalStrength > -90 -> 30000
-                    else -> 10000
-                }
-            }
-            "LTE", "4G" -> {
-                when {
-                    signalStrength > -70 -> 20000
-                    signalStrength > -90 -> 10000
-                    else -> 5000
-                }
-            }
-            "HSPA+", "HSPA" -> 5000
-            "3G" -> 2000
-            else -> 1000
         }
     }
 

@@ -179,15 +179,8 @@ class CsvParser {
                     )
                 }
 
-                // Parse data rate
-                val dataRateKbps = try {
-                    fields[6].toInt()
-                } catch (e: Exception) {
-                    return CsvParseResult.Error(
-                        "Invalid data rate at line $lineNumber: ${fields[6]}",
-                        lineNumber = lineNumber
-                    )
-                }
+                // Parse data rate (removed - was estimated data, not real measurement)
+                // Skip field[6] as it's no longer used
 
                 // Parse network type (string)
                 val networkType = fields[7]
@@ -277,7 +270,6 @@ class CsvParser {
                     altitude = altitude,
                     signalStrength = signalStrength,
                     cellId = cellId,
-                    dataRateKbps = dataRateKbps,
                     networkType = networkType,
                     asu = asu,
                     dataState = dataState,

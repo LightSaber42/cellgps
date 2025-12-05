@@ -51,12 +51,23 @@ adb-screenshot.ps1
 ADD_PRIVACY_POLICY.md
 app/build.gradle.kts
 app/proguard-rules.pro
+app/schemas/com.signaldrivelogger.data.database.SignalDatabase/1.json
 app/src/main/AndroidManifest.xml
 app/src/main/java/com/signaldrivelogger/data/CsvParser.kt
+app/src/main/java/com/signaldrivelogger/data/database/dao/SessionDao.kt
+app/src/main/java/com/signaldrivelogger/data/database/dao/SignalRecordDao.kt
+app/src/main/java/com/signaldrivelogger/data/database/dao/SimProfileDao.kt
+app/src/main/java/com/signaldrivelogger/data/database/entities/SessionEntity.kt
+app/src/main/java/com/signaldrivelogger/data/database/entities/SignalRecordEntity.kt
+app/src/main/java/com/signaldrivelogger/data/database/entities/SimProfileEntity.kt
+app/src/main/java/com/signaldrivelogger/data/database/mappers/SignalRecordMapper.kt
+app/src/main/java/com/signaldrivelogger/data/database/SignalDatabase.kt
 app/src/main/java/com/signaldrivelogger/data/FileLogger.kt
 app/src/main/java/com/signaldrivelogger/data/LocationProvider.kt
 app/src/main/java/com/signaldrivelogger/data/MultiSimMonitor.kt
 app/src/main/java/com/signaldrivelogger/data/SignalRepository.kt
+app/src/main/java/com/signaldrivelogger/data/sync/SyncPayload.kt
+app/src/main/java/com/signaldrivelogger/data/sync/SyncWorker.kt
 app/src/main/java/com/signaldrivelogger/data/TelephonyMonitor.kt
 app/src/main/java/com/signaldrivelogger/domain/models/SignalRecord.kt
 app/src/main/java/com/signaldrivelogger/service/LoggingService.kt
@@ -94,6 +105,7 @@ gradle.properties
 gradle/wrapper/gradle-wrapper.properties
 gradlew
 gradlew.bat
+IMPROVEMENT_ROADMAP.md
 index.html
 KEYSTORE_SETUP.md
 keystore.properties.example
@@ -373,6 +385,8 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("kotlin-kapt")
+    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.24"
 }
 
 // Load keystore properties if file exists
@@ -437,6 +451,13 @@ android {
         jvmTarget = "17"
     }
 
+    // Room schema export directory
+    kapt {
+        arguments {
+            arg("room.schemaLocation", "$projectDir/schemas")
+        }
+    }
+
     buildFeatures {
         compose = true
     }
@@ -496,6 +517,18 @@ dependencies {
     // Permissions
     implementation("com.google.accompanist:accompanist-permissions:0.32.0")
 
+    // Room Database
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    kapt("androidx.room:room-compiler:$roomVersion")
+
+    // WorkManager for background sync
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    // JSON serialization for cloud sync
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
@@ -526,6 +559,423 @@ File: app/proguard-rules.pro
 # Keep Parcelable implementations
 -keep class * implements android.os.Parcelable {
     public static final android.os.Parcelable$Creator *;
+}
+
+================
+File: app/schemas/com.signaldrivelogger.data.database.SignalDatabase/1.json
+================
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "7e22470c8f571fac444987740fea08ac",
+    "entities": [
+      {
+        "tableName": "sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`session_id` TEXT NOT NULL, `start_time` INTEGER NOT NULL, `end_time` INTEGER, `device_id` TEXT, `is_synced` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, PRIMARY KEY(`session_id`))",
+        "fields": [
+          {
+            "fieldPath": "session_id",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "start_time",
+            "columnName": "start_time",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "end_time",
+            "columnName": "end_time",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "device_id",
+            "columnName": "device_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "is_synced",
+            "columnName": "is_synced",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "created_at",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "session_id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "signal_logs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `session_id` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `latitude` REAL NOT NULL, `longitude` REAL NOT NULL, `altitude` REAL NOT NULL, `speed_mps` REAL, `bearing` REAL, `gps_accuracy` REAL, `sim_slot_index` INTEGER NOT NULL, `subscription_id` INTEGER, `network_type_raw` TEXT NOT NULL, `network_operator` TEXT NOT NULL, `roaming_state` INTEGER NOT NULL, `is_endc_available` INTEGER NOT NULL, `nr_state` TEXT, `override_network_type` TEXT, `dbm` INTEGER NOT NULL, `asu` INTEGER NOT NULL, `lte_earfcn` INTEGER, `lte_bandwidth` INTEGER, `lte_cqi` INTEGER, `lte_rssi` INTEGER, `nr_arfcn` INTEGER, `nr_csi_rsrp` INTEGER, `nr_csi_sinr` INTEGER, `nr_ss_rsrp` INTEGER, `nr_ss_sinr` INTEGER, `cell_id` INTEGER NOT NULL, `ci` INTEGER NOT NULL, `enb` INTEGER NOT NULL, `tac` INTEGER NOT NULL, `pci` INTEGER NOT NULL, `rsrq` INTEGER NOT NULL, `snr` INTEGER NOT NULL, `timing_advance` INTEGER NOT NULL, FOREIGN KEY(`session_id`) REFERENCES `sessions`(`session_id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`subscription_id`) REFERENCES `sim_profiles`(`subscription_id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "session_id",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "latitude",
+            "columnName": "latitude",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "longitude",
+            "columnName": "longitude",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "altitude",
+            "columnName": "altitude",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "speed_mps",
+            "columnName": "speed_mps",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "bearing",
+            "columnName": "bearing",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "gps_accuracy",
+            "columnName": "gps_accuracy",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sim_slot_index",
+            "columnName": "sim_slot_index",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subscription_id",
+            "columnName": "subscription_id",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "network_type_raw",
+            "columnName": "network_type_raw",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "network_operator",
+            "columnName": "network_operator",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "roaming_state",
+            "columnName": "roaming_state",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "is_endc_available",
+            "columnName": "is_endc_available",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nr_state",
+            "columnName": "nr_state",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "override_network_type",
+            "columnName": "override_network_type",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dbm",
+            "columnName": "dbm",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "asu",
+            "columnName": "asu",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lte_earfcn",
+            "columnName": "lte_earfcn",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lte_bandwidth",
+            "columnName": "lte_bandwidth",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lte_cqi",
+            "columnName": "lte_cqi",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lte_rssi",
+            "columnName": "lte_rssi",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "nr_arfcn",
+            "columnName": "nr_arfcn",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "nr_csi_rsrp",
+            "columnName": "nr_csi_rsrp",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "nr_csi_sinr",
+            "columnName": "nr_csi_sinr",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "nr_ss_rsrp",
+            "columnName": "nr_ss_rsrp",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "nr_ss_sinr",
+            "columnName": "nr_ss_sinr",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "cell_id",
+            "columnName": "cell_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ci",
+            "columnName": "ci",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enb",
+            "columnName": "enb",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tac",
+            "columnName": "tac",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pci",
+            "columnName": "pci",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rsrq",
+            "columnName": "rsrq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snr",
+            "columnName": "snr",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timing_advance",
+            "columnName": "timing_advance",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_signal_logs_session_id",
+            "unique": false,
+            "columnNames": [
+              "session_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_signal_logs_session_id` ON `${TABLE_NAME}` (`session_id`)"
+          },
+          {
+            "name": "index_signal_logs_subscription_id",
+            "unique": false,
+            "columnNames": [
+              "subscription_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_signal_logs_subscription_id` ON `${TABLE_NAME}` (`subscription_id`)"
+          },
+          {
+            "name": "index_signal_logs_timestamp",
+            "unique": false,
+            "columnNames": [
+              "timestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_signal_logs_timestamp` ON `${TABLE_NAME}` (`timestamp`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "session_id"
+            ],
+            "referencedColumns": [
+              "session_id"
+            ]
+          },
+          {
+            "table": "sim_profiles",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "subscription_id"
+            ],
+            "referencedColumns": [
+              "subscription_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "sim_profiles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subscription_id` INTEGER NOT NULL, `sim_slot_index` INTEGER NOT NULL, `sim_operator_name` TEXT NOT NULL, `sim_mcc` TEXT NOT NULL, `sim_mnc` TEXT NOT NULL, `sim_display_name` TEXT NOT NULL, `is_embedded` INTEGER NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, PRIMARY KEY(`subscription_id`))",
+        "fields": [
+          {
+            "fieldPath": "subscription_id",
+            "columnName": "subscription_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sim_slot_index",
+            "columnName": "sim_slot_index",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sim_operator_name",
+            "columnName": "sim_operator_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sim_mcc",
+            "columnName": "sim_mcc",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sim_mnc",
+            "columnName": "sim_mnc",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sim_display_name",
+            "columnName": "sim_display_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "is_embedded",
+            "columnName": "is_embedded",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "created_at",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updated_at",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "subscription_id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7e22470c8f571fac444987740fea08ac')"
+    ]
+  }
 }
 
 ================
@@ -808,15 +1258,8 @@ class CsvParser {
                     )
                 }
 
-                // Parse data rate
-                val dataRateKbps = try {
-                    fields[6].toInt()
-                } catch (e: Exception) {
-                    return CsvParseResult.Error(
-                        "Invalid data rate at line $lineNumber: ${fields[6]}",
-                        lineNumber = lineNumber
-                    )
-                }
+                // Parse data rate (removed - was estimated data, not real measurement)
+                // Skip field[6] as it's no longer used
 
                 // Parse network type (string)
                 val networkType = fields[7]
@@ -906,7 +1349,6 @@ class CsvParser {
                     altitude = altitude,
                     signalStrength = signalStrength,
                     cellId = cellId,
-                    dataRateKbps = dataRateKbps,
                     networkType = networkType,
                     asu = asu,
                     dataState = dataState,
@@ -987,6 +1429,540 @@ class CsvParser {
 
             return fields
         }
+    }
+}
+
+================
+File: app/src/main/java/com/signaldrivelogger/data/database/dao/SessionDao.kt
+================
+package com.signaldrivelogger.data.database.dao
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Update
+import com.signaldrivelogger.data.database.entities.SessionEntity
+import kotlinx.coroutines.flow.Flow
+
+/**
+ * Data Access Object for SessionEntity.
+ */
+@Dao
+interface SessionDao {
+    /**
+     * Insert a session.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(session: SessionEntity)
+
+    /**
+     * Update a session.
+     */
+    @Update
+    suspend fun update(session: SessionEntity)
+
+    /**
+     * Get a session by ID.
+     */
+    @Query("SELECT * FROM sessions WHERE session_id = :sessionId")
+    suspend fun getSession(sessionId: String): SessionEntity?
+
+    /**
+     * Get all sessions.
+     */
+    @Query("SELECT * FROM sessions ORDER BY start_time DESC")
+    fun getAllSessions(): Flow<List<SessionEntity>>
+
+    /**
+     * Get all unsynced sessions.
+     */
+    @Query("SELECT * FROM sessions WHERE is_synced = 0 ORDER BY start_time ASC")
+    suspend fun getUnsyncedSessions(): List<SessionEntity>
+
+    /**
+     * Mark a session as synced.
+     */
+    @Query("UPDATE sessions SET is_synced = 1 WHERE session_id = :sessionId")
+    suspend fun markSessionAsSynced(sessionId: String)
+
+    /**
+     * Delete a session.
+     */
+    @Query("DELETE FROM sessions WHERE session_id = :sessionId")
+    suspend fun deleteSession(sessionId: String)
+
+    /**
+     * Delete old sessions (older than specified days).
+     */
+    @Query("DELETE FROM sessions WHERE start_time < :cutoffTimestamp")
+    suspend fun deleteOldSessions(cutoffTimestamp: Long): Int
+}
+
+================
+File: app/src/main/java/com/signaldrivelogger/data/database/dao/SignalRecordDao.kt
+================
+package com.signaldrivelogger.data.database.dao
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Transaction
+import com.signaldrivelogger.data.database.entities.SignalRecordEntity
+import kotlinx.coroutines.flow.Flow
+
+/**
+ * Data Access Object for SignalRecordEntity.
+ */
+@Dao
+interface SignalRecordDao {
+    /**
+     * Insert a signal record.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(record: SignalRecordEntity): Long
+
+    /**
+     * Insert multiple signal records in a transaction.
+     */
+    @Transaction
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(records: List<SignalRecordEntity>)
+
+    /**
+     * Get all records for a session.
+     */
+    @Query("SELECT * FROM signal_logs WHERE session_id = :sessionId ORDER BY timestamp ASC")
+    fun getRecordsBySession(sessionId: String): Flow<List<SignalRecordEntity>>
+
+    /**
+     * Get all unsynced records.
+     */
+    @Query("SELECT * FROM signal_logs WHERE session_id IN (SELECT session_id FROM sessions WHERE is_synced = 0) ORDER BY timestamp ASC")
+    suspend fun getUnsyncedRecords(): List<SignalRecordEntity>
+
+    /**
+     * Get unsynced records for a specific session.
+     */
+    @Query("SELECT * FROM signal_logs WHERE session_id = :sessionId AND session_id IN (SELECT session_id FROM sessions WHERE is_synced = 0) ORDER BY timestamp ASC")
+    suspend fun getUnsyncedRecordsBySession(sessionId: String): List<SignalRecordEntity>
+
+    /**
+     * Get all records as Flow for UI observation.
+     */
+    @Query("SELECT * FROM signal_logs ORDER BY timestamp DESC")
+    fun getAllRecords(): Flow<List<SignalRecordEntity>>
+
+    /**
+     * Get records by session ID (non-Flow for batch operations).
+     */
+    @Query("SELECT * FROM signal_logs WHERE session_id = :sessionId ORDER BY timestamp ASC")
+    suspend fun getRecordsBySessionSync(sessionId: String): List<SignalRecordEntity>
+
+    /**
+     * Delete records older than specified days.
+     */
+    @Query("DELETE FROM signal_logs WHERE timestamp < :cutoffTimestamp")
+    suspend fun deleteOldRecords(cutoffTimestamp: Long): Int
+
+    /**
+     * Delete records for a specific session.
+     */
+    @Query("DELETE FROM signal_logs WHERE session_id = :sessionId")
+    suspend fun deleteRecordsBySession(sessionId: String): Int
+
+    /**
+     * Get count of records for a session.
+     */
+    @Query("SELECT COUNT(*) FROM signal_logs WHERE session_id = :sessionId")
+    suspend fun getRecordCount(sessionId: String): Int
+}
+
+================
+File: app/src/main/java/com/signaldrivelogger/data/database/dao/SimProfileDao.kt
+================
+package com.signaldrivelogger.data.database.dao
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Update
+import com.signaldrivelogger.data.database.entities.SimProfileEntity
+
+/**
+ * Data Access Object for SimProfileEntity.
+ */
+@Dao
+interface SimProfileDao {
+    /**
+     * Insert or update a SIM profile.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdate(profile: SimProfileEntity)
+
+    /**
+     * Update a SIM profile.
+     */
+    @Update
+    suspend fun update(profile: SimProfileEntity)
+
+    /**
+     * Get a SIM profile by subscription ID.
+     */
+    @Query("SELECT * FROM sim_profiles WHERE subscription_id = :subscriptionId")
+    suspend fun getSimProfile(subscriptionId: Int): SimProfileEntity?
+
+    /**
+     * Get all SIM profiles.
+     */
+    @Query("SELECT * FROM sim_profiles ORDER BY sim_slot_index ASC")
+    suspend fun getAllSimProfiles(): List<SimProfileEntity>
+
+    /**
+     * Delete a SIM profile.
+     */
+    @Query("DELETE FROM sim_profiles WHERE subscription_id = :subscriptionId")
+    suspend fun deleteSimProfile(subscriptionId: Int)
+}
+
+================
+File: app/src/main/java/com/signaldrivelogger/data/database/entities/SessionEntity.kt
+================
+package com.signaldrivelogger.data.database.entities
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+/**
+ * Represents a logging session (drive/tracking session).
+ * Groups signal logs by session for cloud sync and data management.
+ */
+@Entity(tableName = "sessions")
+data class SessionEntity(
+    @PrimaryKey
+    val session_id: String,
+    val start_time: Long,
+    val end_time: Long? = null,
+    val device_id: String? = null,
+    val is_synced: Boolean = false,
+    val created_at: Long = System.currentTimeMillis()
+)
+
+================
+File: app/src/main/java/com/signaldrivelogger/data/database/entities/SignalRecordEntity.kt
+================
+package com.signaldrivelogger.data.database.entities
+
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.PrimaryKey
+
+/**
+ * Represents a single signal measurement record with location and telephony data.
+ * Based on the improved data model from Phase 2 of the roadmap.
+ */
+@Entity(
+    tableName = "signal_logs",
+    foreignKeys = [
+        ForeignKey(
+            entity = SessionEntity::class,
+            parentColumns = ["session_id"],
+            childColumns = ["session_id"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = SimProfileEntity::class,
+            parentColumns = ["subscription_id"],
+            childColumns = ["subscription_id"],
+            onDelete = ForeignKey.SET_NULL
+        )
+    ],
+    indices = [
+        Index(value = ["session_id"]),
+        Index(value = ["subscription_id"]),
+        Index(value = ["timestamp"])
+    ]
+)
+data class SignalRecordEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val session_id: String,
+    val timestamp: Long,
+
+    // Location & Velocity
+    val latitude: Double,
+    val longitude: Double,
+    val altitude: Double,
+    val speed_mps: Float? = null, // Velocity in meters per second
+    val bearing: Float? = null, // Direction of travel (0-360)
+    val gps_accuracy: Float? = null, // GPS accuracy in meters
+
+    // Identifiers
+    val sim_slot_index: Int,
+    val subscription_id: Int? = null, // Foreign key to SimProfileEntity
+
+    // Network Identity
+    val network_type_raw: String, // e.g., LTE, NR
+    val network_operator: String, // MCC+MNC (e.g., 23420)
+    val roaming_state: Boolean,
+
+    // 5G / Advanced LTE Specifics
+    val is_endc_available: Boolean = false, // "EN-DC Available"
+    val nr_state: String? = null, // "NR State" (NONE, RESTRICTED, NOT_RESTRICTED, CONNECTED)
+    val override_network_type: String? = null, // e.g., LTE_CA, NR_NSA, NR_ADVANCED
+
+    // Signal Metrics
+    val dbm: Int, // RSRP in dBm
+    val asu: Int = 0, // Additional Signal Unit
+
+    // LTE Specifics
+    val lte_earfcn: Int? = null,
+    val lte_bandwidth: Int? = null, // DL Bandwidth
+    val lte_cqi: Int? = null,
+    val lte_rssi: Int? = null,
+
+    // NR (5G) Specifics
+    val nr_arfcn: Int? = null,
+    val nr_csi_rsrp: Int? = null,
+    val nr_csi_sinr: Int? = null,
+    val nr_ss_rsrp: Int? = null,
+    val nr_ss_sinr: Int? = null,
+
+    // Legacy fields (for backward compatibility during migration)
+    val cell_id: Int = 0,
+    val ci: Int = 0, // Cell Identity
+    val enb: Int = 0, // eNodeB ID
+    val tac: Int = 0, // Tracking Area Code
+    val pci: Int = 0, // Physical Cell ID
+    val rsrq: Int = 0, // Reference Signal Received Quality in dB
+    val snr: Int = 0, // Signal-to-Noise Ratio in dB
+    val timing_advance: Int = 0 // Timing Advance
+)
+
+================
+File: app/src/main/java/com/signaldrivelogger/data/database/entities/SimProfileEntity.kt
+================
+package com.signaldrivelogger.data.database.entities
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+/**
+ * Represents SIM profile information.
+ * Normalizes static SIM data to avoid repeating strings in every signal row.
+ */
+@Entity(tableName = "sim_profiles")
+data class SimProfileEntity(
+    @PrimaryKey
+    val subscription_id: Int,
+    val sim_slot_index: Int,
+    val sim_operator_name: String = "",
+    val sim_mcc: String = "",
+    val sim_mnc: String = "",
+    val sim_display_name: String = "",
+    val is_embedded: Boolean = false,
+    val created_at: Long = System.currentTimeMillis(),
+    val updated_at: Long = System.currentTimeMillis()
+)
+
+================
+File: app/src/main/java/com/signaldrivelogger/data/database/mappers/SignalRecordMapper.kt
+================
+package com.signaldrivelogger.data.database.mappers
+
+import com.signaldrivelogger.data.database.entities.SignalRecordEntity
+import com.signaldrivelogger.domain.models.SignalRecord
+import java.time.Instant
+import java.time.ZoneOffset
+
+/**
+ * Mapper between SignalRecord (domain model) and SignalRecordEntity (database entity).
+ */
+object SignalRecordMapper {
+    /**
+     * Converts SignalRecord (domain) to SignalRecordEntity (database).
+     */
+    fun toEntity(record: SignalRecord, sessionId: String): SignalRecordEntity {
+        return SignalRecordEntity(
+            id = 0, // Auto-generated by Room
+            session_id = sessionId,
+            timestamp = record.timestamp.toEpochMilli(),
+            latitude = record.latitude,
+            longitude = record.longitude,
+            altitude = record.altitude,
+            speed_mps = record.speedMps,
+            bearing = record.bearing,
+            gps_accuracy = record.gpsAccuracy,
+            sim_slot_index = record.simSlotIndex,
+            subscription_id = if (record.subscriptionId >= 0) record.subscriptionId else null,
+            network_type_raw = record.networkType,
+            network_operator = "${record.mcc}${record.mnc}",
+            roaming_state = record.isRoaming,
+            is_endc_available = record.isEndcAvailable,
+            nr_state = record.nrState,
+            override_network_type = record.overrideNetworkType,
+            dbm = record.signalStrength,
+            asu = record.asu,
+            lte_earfcn = if (record.earfcn > 0) record.earfcn else null,
+            lte_bandwidth = record.lteBandwidth ?: if (record.bandwidth > 0) record.bandwidth else null,
+            lte_cqi = if (record.cqi > 0) record.cqi else null,
+            lte_rssi = if (record.rssi != 0) record.rssi else null,
+            nr_arfcn = if (record.nrarfcn > 0) record.nrarfcn else null,
+            nr_csi_rsrp = record.nrCsiRsrp,
+            nr_csi_sinr = record.nrCsiSinr,
+            nr_ss_rsrp = record.nrSsRsrp,
+            nr_ss_sinr = record.nrSsSinr,
+            cell_id = record.cellId,
+            ci = record.ci,
+            enb = record.enb,
+            tac = record.tac,
+            pci = record.pci,
+            rsrq = record.rsrq,
+            snr = record.snr,
+            timing_advance = record.timingAdvance
+        )
+    }
+
+    /**
+     * Converts SignalRecordEntity (database) to SignalRecord (domain).
+     */
+    fun toDomain(entity: SignalRecordEntity, simProfile: SimProfileInfo? = null): SignalRecord {
+        // Extract MCC and MNC from network_operator
+        val mcc = if (entity.network_operator.length >= 3) entity.network_operator.substring(0, 3) else ""
+        val mnc = if (entity.network_operator.length > 3) entity.network_operator.substring(3) else ""
+
+        return SignalRecord(
+            timestamp = Instant.ofEpochMilli(entity.timestamp),
+            latitude = entity.latitude,
+            longitude = entity.longitude,
+            altitude = entity.altitude,
+            signalStrength = entity.dbm,
+            cellId = entity.cell_id,
+            networkType = entity.network_type_raw,
+            asu = entity.asu,
+            speedMps = entity.speed_mps,
+            bearing = entity.bearing,
+            gpsAccuracy = entity.gps_accuracy,
+            dataState = "Unknown", // Not stored in entity, would need to be added if needed
+            dataActivity = "None", // Not stored in entity
+            isRoaming = entity.roaming_state,
+            simState = simProfile?.simState ?: "Unknown",
+            simOperatorName = simProfile?.simOperatorName ?: "",
+            simMcc = simProfile?.simMcc ?: "",
+            simMnc = simProfile?.simMnc ?: "",
+            operatorName = "", // Not stored in entity
+            mcc = mcc,
+            mnc = mnc,
+            phoneType = "Unknown", // Not stored in entity
+            simSlotIndex = entity.sim_slot_index,
+            subscriptionId = entity.subscription_id ?: -1,
+            simDisplayName = simProfile?.simDisplayName ?: "",
+            isEmbedded = simProfile?.isEmbedded ?: false,
+            ci = entity.ci,
+            enb = entity.enb,
+            tac = entity.tac,
+            pci = entity.pci,
+            bandwidth = entity.lte_bandwidth ?: 0,
+            earfcn = entity.lte_earfcn ?: 0,
+            nrarfcn = entity.nr_arfcn ?: 0,
+            rssi = entity.lte_rssi ?: 0,
+            rsrq = entity.rsrq,
+            snr = entity.snr,
+            cqi = entity.lte_cqi ?: 0,
+            timingAdvance = entity.timing_advance,
+            isEndcAvailable = entity.is_endc_available,
+            nrState = entity.nr_state,
+            overrideNetworkType = entity.override_network_type,
+            lteBandwidth = entity.lte_bandwidth,
+            nrCsiRsrp = entity.nr_csi_rsrp,
+            nrCsiSinr = entity.nr_csi_sinr,
+            nrSsRsrp = entity.nr_ss_rsrp,
+            nrSsSinr = entity.nr_ss_sinr
+        )
+    }
+}
+
+/**
+ * Helper data class for SIM profile information when converting entities to domain.
+ */
+data class SimProfileInfo(
+    val simState: String = "Unknown",
+    val simOperatorName: String = "",
+    val simMcc: String = "",
+    val simMnc: String = "",
+    val simDisplayName: String = "",
+    val isEmbedded: Boolean = false
+)
+
+================
+File: app/src/main/java/com/signaldrivelogger/data/database/SignalDatabase.kt
+================
+package com.signaldrivelogger.data.database
+
+import android.content.Context
+import androidx.room.Database
+import androidx.room.Room
+import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+import com.signaldrivelogger.data.database.dao.SessionDao
+import com.signaldrivelogger.data.database.dao.SignalRecordDao
+import com.signaldrivelogger.data.database.dao.SimProfileDao
+import com.signaldrivelogger.data.database.entities.SessionEntity
+import com.signaldrivelogger.data.database.entities.SignalRecordEntity
+import com.signaldrivelogger.data.database.entities.SimProfileEntity
+
+/**
+ * Room database for signal logging.
+ * Version 1: Initial schema with sessions, signal_logs, and sim_profiles tables.
+ */
+@Database(
+    entities = [
+        SessionEntity::class,
+        SignalRecordEntity::class,
+        SimProfileEntity::class
+    ],
+    version = 1,
+    exportSchema = true
+)
+abstract class SignalDatabase : RoomDatabase() {
+    abstract fun signalRecordDao(): SignalRecordDao
+    abstract fun sessionDao(): SessionDao
+    abstract fun simProfileDao(): SimProfileDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: SignalDatabase? = null
+
+        fun getDatabase(context: Context): SignalDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    SignalDatabase::class.java,
+                    "signal_database"
+                )
+                    .fallbackToDestructiveMigration() // For development - remove in production
+                    .build()
+                INSTANCE = instance
+                instance
+            }
+        }
+
+        /**
+         * Migration from version 1 to 2 (example for future migrations).
+         * Uncomment and modify when needed.
+         */
+        /*
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Add migration SQL here
+                // Example: database.execSQL("ALTER TABLE signal_logs ADD COLUMN new_field TEXT")
+            }
+        }
+        */
     }
 }
 
@@ -1978,66 +2954,162 @@ File: app/src/main/java/com/signaldrivelogger/data/SignalRepository.kt
 ================
 package com.signaldrivelogger.data
 
+import android.content.Context
 import android.location.Location
+import com.signaldrivelogger.data.database.SignalDatabase
+import com.signaldrivelogger.data.database.dao.SessionDao
+import com.signaldrivelogger.data.database.dao.SignalRecordDao
+import com.signaldrivelogger.data.database.dao.SimProfileDao
+import com.signaldrivelogger.data.database.entities.SessionEntity
+import com.signaldrivelogger.data.database.entities.SimProfileEntity
+import com.signaldrivelogger.data.database.mappers.SignalRecordMapper
 import com.signaldrivelogger.domain.models.SignalRecord
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Instant
+import java.util.UUID
 
 /**
  * Repository that combines location and signal data into SignalRecord objects.
+ * Refactored to use Room database with channel-based sequential writing (Phase 1.1).
  */
 class SignalRepository(
+    private val context: Context,
     private val locationProvider: LocationProvider,
     private val telephonyMonitor: TelephonyMonitor,
     private val fileLogger: FileLogger
 ) {
-    // Use MutableList internally to avoid O(N^2) copying on every append
-    private val _recordsList = mutableListOf<SignalRecord>()
-    private val _records = MutableStateFlow<List<SignalRecord>>(emptyList())
-    val records: StateFlow<List<SignalRecord>> = _records.asStateFlow()
+    private val database = SignalDatabase.getDatabase(context)
+    private val signalRecordDao: SignalRecordDao = database.signalRecordDao()
+    private val sessionDao: SessionDao = database.sessionDao()
+    private val simProfileDao: SimProfileDao = database.simProfileDao()
 
-    // Throttle UI updates to prevent UI freeze on long drives
-    private var lastUiUpdate = 0L
+    // Channel-based writing for sequential database writes (Phase 1.1)
+    private val writeChannel = Channel<SignalRecord>(Channel.UNLIMITED)
+    private val writeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // Current session ID
+    private var currentSessionId: String? = null
+    private var currentFilename: String = "signal_log_${System.currentTimeMillis()}"
 
     private val _isLogging = MutableStateFlow(false)
     val isLogging: StateFlow<Boolean> = _isLogging.asStateFlow()
 
-    private var currentFilename: String = "signal_log_${System.currentTimeMillis()}"
+    // Flow of all records for UI observation (from database)
+    val records: Flow<List<SignalRecord>> = signalRecordDao.getAllRecords()
+        .map { entities ->
+            entities.map { entity ->
+                val simProfile = entity.subscription_id?.let { subId ->
+                    simProfileDao.getSimProfile(subId)
+                }
+                SignalRecordMapper.toDomain(
+                    entity,
+                    simProfile?.let {
+                        com.signaldrivelogger.data.database.mappers.SimProfileInfo(
+                            simOperatorName = it.sim_operator_name,
+                            simMcc = it.sim_mcc,
+                            simMnc = it.sim_mnc,
+                            simDisplayName = it.sim_display_name,
+                            isEmbedded = it.is_embedded
+                        )
+                    }
+                )
+            }
+        }
+
+    init {
+        // Start channel consumer for sequential database writes
+        startChannelConsumer()
+    }
 
     /**
-     * Starts logging by combining location and signal updates.
+     * Channel consumer that writes records to database sequentially.
+     * This ensures thread-safe, sequential writes without blocking the main flow.
+     */
+    private fun startChannelConsumer() {
+        writeScope.launch {
+            for (record in writeChannel) {
+                try {
+                    val sessionId = currentSessionId ?: return@launch
+                    val entity = SignalRecordMapper.toEntity(record, sessionId)
+                    signalRecordDao.insert(entity)
+
+                    // Also log to file if logging is active
+                    if (_isLogging.value) {
+                        fileLogger.logToCsv(record, currentFilename)
+                        fileLogger.logToGpx(record, currentFilename)
+                    }
+                } catch (e: Exception) {
+                    // Log error but continue processing
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
+    /**
+     * Starts logging by creating a session and starting file logging.
      */
     suspend fun startLogging(filename: String? = null) {
         if (_isLogging.value) return
 
         currentFilename = filename ?: "signal_log_${System.currentTimeMillis()}"
+        currentSessionId = UUID.randomUUID().toString()
+
         _isLogging.value = true
 
-        // Start buffered file logging session (now suspend function)
+        // Create session in database
+        val session = SessionEntity(
+            session_id = currentSessionId!!,
+            start_time = System.currentTimeMillis(),
+            device_id = android.provider.Settings.Secure.getString(
+                context.contentResolver,
+                android.provider.Settings.Secure.ANDROID_ID
+            )
+        )
+        sessionDao.insert(session)
+
+        // Start buffered file logging session
         fileLogger.startNewSession(currentFilename)
     }
 
     /**
-     * Stops logging.
+     * Stops logging and closes the session.
      */
     suspend fun stopLogging() {
         _isLogging.value = false
 
-        // Close buffered file logging session (now suspend function)
+        // Update session end time
+        currentSessionId?.let { sessionId ->
+            val session = sessionDao.getSession(sessionId)
+            session?.let {
+                sessionDao.update(it.copy(end_time = System.currentTimeMillis()))
+            }
+        }
+
+        // Close buffered file logging session
         fileLogger.closeSession()
+
+        currentSessionId = null
     }
 
     /**
      * Creates a SignalRecord from location and signal data.
+     * Updated to include speed, bearing, and GPS accuracy (Phase 2.2).
      */
     suspend fun createRecord(
         location: Location,
-        signalData: com.signaldrivelogger.data.SignalData,
-        dataRate: Int,
+        signalData: SignalData,
         simSlotIndex: Int = 0,
         subscriptionId: Int = -1,
         simDisplayName: String = "",
@@ -2045,15 +3117,34 @@ class SignalRepository(
     ): SignalRecord? {
         val strength = signalData.signalStrength
 
+        // Ensure SIM profile exists in database
+        if (subscriptionId >= 0) {
+            val simProfile = SimProfileEntity(
+                subscription_id = subscriptionId,
+                sim_slot_index = simSlotIndex,
+                sim_operator_name = signalData.simOperatorName,
+                sim_mcc = signalData.simMcc,
+                sim_mnc = signalData.simMnc,
+                sim_display_name = simDisplayName,
+                is_embedded = isEmbedded,
+                updated_at = System.currentTimeMillis()
+            )
+            simProfileDao.insertOrUpdate(simProfile)
+        }
+
         return SignalRecord(
             timestamp = Instant.now(),
             latitude = location.latitude,
             longitude = location.longitude,
-            altitude = location.altitude, // GPS altitude in meters
+            altitude = location.altitude,
             signalStrength = strength,
             cellId = signalData.cellId,
-            dataRateKbps = dataRate,
             networkType = signalData.networkType,
+            asu = 0, // Will be calculated if needed
+            // Phase 2.2: Extract speed, bearing, and accuracy from Location
+            speedMps = if (location.hasSpeed()) location.speed else null,
+            bearing = if (location.hasBearing()) location.bearing else null,
+            gpsAccuracy = if (location.hasAccuracy()) location.accuracy else null,
             dataState = signalData.dataState,
             dataActivity = signalData.dataActivity,
             isRoaming = signalData.isRoaming,
@@ -2080,53 +3171,67 @@ class SignalRepository(
             rsrq = signalData.rsrq,
             snr = signalData.snr,
             cqi = signalData.cqi,
-            timingAdvance = signalData.timingAdvance
+            timingAdvance = signalData.timingAdvance,
+            // Phase 2.3: Extended radio data
+            isEndcAvailable = signalData.isEndcAvailable,
+            nrState = signalData.nrState,
+            overrideNetworkType = signalData.overrideNetworkType,
+            lteBandwidth = signalData.lteBandwidth,
+            nrCsiRsrp = signalData.nrCsiRsrp,
+            nrCsiSinr = signalData.nrCsiSinr,
+            nrSsRsrp = signalData.nrSsRsrp,
+            nrSsSinr = signalData.nrSsSinr
         )
     }
 
     /**
-     * Adds a record to the list and logs it to file.
-     * FIXED: Use MutableList to avoid O(N^2) list copying on every append.
-     * OPTIMIZED: Throttle UI updates to ~1Hz to prevent UI freeze on long drives.
+     * Adds a record via channel for sequential database writing.
+     * This is thread-safe and non-blocking.
      */
     suspend fun addRecord(record: SignalRecord) {
-        // 1. Always add to internal list and log to file (High Frequency)
-        _recordsList.add(record)
+        if (!_isLogging.value) return
 
-        if (_isLogging.value) {
-            // Log to both CSV and GPX (always, for data integrity)
-            fileLogger.logToCsv(record, currentFilename)
-            fileLogger.logToGpx(record, currentFilename)
-        }
-
-        // 2. Throttle UI updates to ~1Hz or when list is small
-        // This prevents the Map and UI from recomposing 10x per second
-        val now = System.currentTimeMillis()
-        if (now - lastUiUpdate > 1000 || _recordsList.size < 5) {
-            _records.value = _recordsList.toList()
-            lastUiUpdate = now
-        }
+        // Send to channel for sequential processing
+        writeChannel.trySend(record)
     }
 
     /**
-     * Saves all records to file.
+     * Saves all records from current session to file.
      */
     suspend fun saveRecords(filename: String, format: String = "csv") {
-        val records = _recordsList.toList()
+        val sessionId = currentSessionId ?: return
+        val entities = signalRecordDao.getRecordsBySessionSync(sessionId)
+        val records = entities.map { entity ->
+            val simProfile = entity.subscription_id?.let { subId ->
+                simProfileDao.getSimProfile(subId)
+            }
+            SignalRecordMapper.toDomain(
+                entity,
+                simProfile?.let {
+                    com.signaldrivelogger.data.database.mappers.SimProfileInfo(
+                        simOperatorName = it.sim_operator_name,
+                        simMcc = it.sim_mcc,
+                        simMnc = it.sim_mnc,
+                        simDisplayName = it.sim_display_name,
+                        isEmbedded = it.is_embedded
+                    )
+                }
+            )
+        }
+
         when (format.lowercase()) {
             "csv" -> fileLogger.saveRecordsToCsv(records, filename)
-            "gpx" -> {
-                fileLogger.saveRecordsToGpx(records, filename)
-            }
+            "gpx" -> fileLogger.saveRecordsToGpx(records, filename)
         }
     }
 
     /**
-     * Clears all records from memory.
+     * Clears all records from database (use with caution).
      */
-    fun clearRecords() {
-        _recordsList.clear()
-        _records.value = emptyList()
+    suspend fun clearRecords() {
+        currentSessionId?.let { sessionId ->
+            signalRecordDao.deleteRecordsBySession(sessionId)
+        }
     }
 
     /**
@@ -2142,19 +3247,31 @@ class SignalRepository(
     }
 
     /**
-     * Imports records from a CSV file and appends them to existing records.
+     * Imports records from a CSV file and saves them to database.
      */
     suspend fun importFromCsv(inputStream: java.io.InputStream): Result<String> {
         return try {
-            val parseResult = com.signaldrivelogger.data.CsvParser.parse(inputStream)
+            val parseResult = CsvParser.parse(inputStream)
             when (parseResult) {
-                is com.signaldrivelogger.data.CsvParseResult.Success -> {
-                    // Append imported records to existing ones (efficiently)
-                    _recordsList.addAll(parseResult.records)
-                    _records.value = _recordsList.toList()
+                is CsvParseResult.Success -> {
+                    // Create a new session for imported records
+                    val importSessionId = UUID.randomUUID().toString()
+                    val session = SessionEntity(
+                        session_id = importSessionId,
+                        start_time = System.currentTimeMillis(),
+                        end_time = System.currentTimeMillis()
+                    )
+                    sessionDao.insert(session)
+
+                    // Insert all records
+                    val entities = parseResult.records.map { record ->
+                        SignalRecordMapper.toEntity(record, importSessionId)
+                    }
+                    signalRecordDao.insertAll(entities)
+
                     Result.success("Successfully imported ${parseResult.records.size} records")
                 }
-                is com.signaldrivelogger.data.CsvParseResult.Error -> {
+                is CsvParseResult.Error -> {
                     Result.failure(Exception(parseResult.message))
                 }
             }
@@ -2162,6 +3279,249 @@ class SignalRepository(
             Result.failure(e)
         } finally {
             inputStream.close()
+        }
+    }
+
+    /**
+     * Cleanup on destroy.
+     */
+    fun cleanup() {
+        writeScope.cancel()
+        writeChannel.close()
+    }
+}
+
+================
+File: app/src/main/java/com/signaldrivelogger/data/sync/SyncPayload.kt
+================
+package com.signaldrivelogger.data.sync
+
+import com.signaldrivelogger.data.database.entities.SignalRecordEntity
+import kotlinx.serialization.Serializable
+
+/**
+ * Phase 3.3: JSON payload structure for cloud sync.
+ * Batches records for efficient HTTP POST requests.
+ */
+@Serializable
+data class SyncPayload(
+    val device_id: String,
+    val session_id: String,
+    val records: List<SignalRecordPayload>
+)
+
+@Serializable
+data class SignalRecordPayload(
+    val timestamp: Long,
+    val latitude: Double,
+    val longitude: Double,
+    val altitude: Double,
+    val speed_mps: Float? = null,
+    val bearing: Float? = null,
+    val gps_accuracy: Float? = null,
+    val sim_slot_index: Int,
+    val subscription_id: Int? = null,
+    val network_type_raw: String,
+    val network_operator: String,
+    val roaming_state: Boolean,
+    val is_endc_available: Boolean = false,
+    val nr_state: String? = null,
+    val override_network_type: String? = null,
+    val dbm: Int,
+    val asu: Int = 0,
+    val lte_earfcn: Int? = null,
+    val lte_bandwidth: Int? = null,
+    val lte_cqi: Int? = null,
+    val lte_rssi: Int? = null,
+    val nr_arfcn: Int? = null,
+    val nr_csi_rsrp: Int? = null,
+    val nr_csi_sinr: Int? = null,
+    val nr_ss_rsrp: Int? = null,
+    val nr_ss_sinr: Int? = null,
+    val cell_id: Int = 0,
+    val ci: Int = 0,
+    val enb: Int = 0,
+    val tac: Int = 0,
+    val pci: Int = 0,
+    val rsrq: Int = 0,
+    val snr: Int = 0,
+    val timing_advance: Int = 0
+)
+
+/**
+ * Converts SignalRecordEntity to SyncPayload format.
+ */
+fun SignalRecordEntity.toSyncPayload(deviceId: String): SignalRecordPayload {
+    return SignalRecordPayload(
+        timestamp = timestamp,
+        latitude = latitude,
+        longitude = longitude,
+        altitude = altitude,
+        speed_mps = speed_mps,
+        bearing = bearing,
+        gps_accuracy = gps_accuracy,
+        sim_slot_index = sim_slot_index,
+        subscription_id = subscription_id,
+        network_type_raw = network_type_raw,
+        network_operator = network_operator,
+        roaming_state = roaming_state,
+        is_endc_available = is_endc_available,
+        nr_state = nr_state,
+        override_network_type = override_network_type,
+        dbm = dbm,
+        asu = asu,
+        lte_earfcn = lte_earfcn,
+        lte_bandwidth = lte_bandwidth,
+        lte_cqi = lte_cqi,
+        lte_rssi = lte_rssi,
+        nr_arfcn = nr_arfcn,
+        nr_csi_rsrp = nr_csi_rsrp,
+        nr_csi_sinr = nr_csi_sinr,
+        nr_ss_rsrp = nr_ss_rsrp,
+        nr_ss_sinr = nr_ss_sinr,
+        cell_id = cell_id,
+        ci = ci,
+        enb = enb,
+        tac = tac,
+        pci = pci,
+        rsrq = rsrq,
+        snr = snr,
+        timing_advance = timing_advance
+    )
+}
+
+================
+File: app/src/main/java/com/signaldrivelogger/data/sync/SyncWorker.kt
+================
+package com.signaldrivelogger.data.sync
+
+import android.content.Context
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import androidx.work.Constraints
+import androidx.work.NetworkType
+import com.signaldrivelogger.data.database.SignalDatabase
+import com.signaldrivelogger.data.database.dao.SessionDao
+import com.signaldrivelogger.data.database.dao.SignalRecordDao
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.net.HttpURLConnection
+import java.net.URL
+
+/**
+ * Phase 3.2: WorkManager worker for syncing signal records to cloud.
+ * Batches records and syncs when network is available and battery is not low.
+ */
+class SyncWorker(
+    context: Context,
+    params: WorkerParameters
+) : CoroutineWorker(context, params) {
+
+    private val database = SignalDatabase.getDatabase(context)
+    private val signalRecordDao: SignalRecordDao = database.signalRecordDao()
+    private val sessionDao: SessionDao = database.sessionDao()
+
+    // Batch size for efficient syncing
+    private val BATCH_SIZE = 50
+
+    // API endpoint (configure this in your app)
+    private val API_ENDPOINT = "https://your-railway-app.app/api/v1/ingest"
+
+    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        try {
+            // Get device ID
+            val deviceId = android.provider.Settings.Secure.getString(
+                applicationContext.contentResolver,
+                android.provider.Settings.Secure.ANDROID_ID
+            ) ?: "unknown"
+
+            // Get all unsynced sessions
+            val unsyncedSessions = sessionDao.getUnsyncedSessions()
+
+            if (unsyncedSessions.isEmpty()) {
+                return@withContext Result.success()
+            }
+
+            // Process each session
+            for (session in unsyncedSessions) {
+                val unsyncedRecords = signalRecordDao.getUnsyncedRecordsBySession(session.session_id)
+
+                if (unsyncedRecords.isEmpty()) {
+                    // No records to sync, mark session as synced
+                    sessionDao.markSessionAsSynced(session.session_id)
+                    continue
+                }
+
+                // Batch records
+                val batches = unsyncedRecords.chunked(BATCH_SIZE)
+
+                for (batch in batches) {
+                    // Convert to payload
+                    val payload = SyncPayload(
+                        device_id = deviceId,
+                        session_id = session.session_id,
+                        records = batch.map { it.toSyncPayload(deviceId) }
+                    )
+
+                    // Sync to API
+                    val success = syncToApi(payload)
+
+                    if (success) {
+                        // Mark records as synced (via session)
+                        sessionDao.markSessionAsSynced(session.session_id)
+                    } else {
+                        // Retry on failure
+                        return@withContext Result.retry()
+                    }
+                }
+            }
+
+            Result.success()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Result.retry()
+        }
+    }
+
+    /**
+     * Syncs payload to API endpoint.
+     */
+    private suspend fun syncToApi(payload: SyncPayload): Boolean {
+        return try {
+            val json = Json { ignoreUnknownKeys = true }
+            val jsonPayload = json.encodeToString(payload)
+
+            val url = URL(API_ENDPOINT)
+            val connection = url.openConnection() as HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.doOutput = true
+
+            connection.outputStream.use { os ->
+                os.write(jsonPayload.toByteArray(Charsets.UTF_8))
+            }
+
+            val responseCode = connection.responseCode
+            connection.disconnect()
+
+            responseCode == HttpURLConnection.HTTP_OK || responseCode == HttpURLConnection.HTTP_CREATED
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    companion object {
+        /**
+         * Creates sync constraints (network required, battery not low).
+         */
+        fun createConstraints(): Constraints {
+            return Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .setRequiresBatteryNotLow(true)
+                .build()
         }
     }
 }
@@ -2324,16 +3684,35 @@ class TelephonyMonitor(private val context: Context) {
         // Update initial values
         emitSignalData()
 
-        // Use PhoneStateListener for all Android versions
-        // Note: SignalStrengthCallback (API 31+) requires different approach, using PhoneStateListener for compatibility
-        phoneStateListener = object : PhoneStateListener() {
-            override fun onSignalStrengthsChanged(signalStrength: SignalStrength) {
-                val dbm = convertToDbm(signalStrength)
-                _currentSignalStrength.value = dbm
-                emitSignalData()
+        // Phase 1.2: Use TelephonyCallback for Android 12+ (API 31+), PhoneStateListener for legacy
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            // Android 12+ (API 31+): Use TelephonyCallback
+            val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+            signalStrengthCallback = object : android.telephony.TelephonyCallback(), android.telephony.TelephonyCallback.SignalStrengthsListener {
+                override fun onSignalStrengthsChanged(signalStrength: SignalStrength) {
+                    val dbm = convertToDbm(signalStrength)
+                    _currentSignalStrength.value = dbm
+                    emitSignalData()
+                }
             }
+            telephonyManager.registerTelephonyCallback(executor, signalStrengthCallback as android.telephony.TelephonyCallback)
+        } else {
+            // Legacy: Use PhoneStateListener for API < 31
+            phoneStateListener = object : PhoneStateListener() {
+                override fun onSignalStrengthsChanged(signalStrength: SignalStrength) {
+                    val dbm = convertToDbm(signalStrength)
+                    _currentSignalStrength.value = dbm
+                    emitSignalData()
+                }
+
+                // Phase 1.2 & 2.3: Monitor ServiceState for NR state and 5G details
+                @Suppress("DEPRECATION")
+                override fun onServiceStateChanged(serviceState: android.telephony.ServiceState?) {
+                    emitSignalData() // Re-emit with updated service state
+                }
+            }
+            telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS or PhoneStateListener.LISTEN_SERVICE_STATE)
         }
-        telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS)
 
         // Periodically emit updates
         updateRunnable = object : Runnable {
@@ -2346,8 +3725,14 @@ class TelephonyMonitor(private val context: Context) {
 
         awaitClose {
             updateRunnable?.let { handler.removeCallbacks(it) }
-            phoneStateListener?.let {
-                telephonyManager.listen(it, PhoneStateListener.LISTEN_NONE)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                signalStrengthCallback?.let {
+                    telephonyManager.unregisterTelephonyCallback(it as android.telephony.TelephonyCallback)
+                }
+            } else {
+                phoneStateListener?.let {
+                    telephonyManager.listen(it, PhoneStateListener.LISTEN_NONE)
+                }
             }
         }
     }
@@ -2530,11 +3915,15 @@ class TelephonyMonitor(private val context: Context) {
 
     /**
      * Gets all cell details as SignalData.
+     * Updated per Phase 2.3: Includes extended radio data (NR state, EN-DC, etc.).
      */
     fun getAllCellDetails(): SignalData {
         val signalStrength = getCurrentSignalStrength() ?: -100
         val cellId = getCurrentCellId() ?: 0
         val networkType = getCurrentNetworkType()
+
+        // Phase 2.3: Extract extended radio data from ServiceState and CellInfo
+        val extendedData = getExtendedRadioData()
 
         return SignalData(
             signalStrength = signalStrength,
@@ -2550,7 +3939,137 @@ class TelephonyMonitor(private val context: Context) {
             operatorName = getOperatorName(),
             mcc = getMcc(),
             mnc = getMnc(),
-            phoneType = getPhoneType()
+            phoneType = getPhoneType(),
+            // Phase 2.3: Extended radio data
+            isEndcAvailable = extendedData.isEndcAvailable,
+            nrState = extendedData.nrState,
+            overrideNetworkType = extendedData.overrideNetworkType,
+            lteBandwidth = extendedData.lteBandwidth,
+            nrCsiRsrp = extendedData.nrCsiRsrp,
+            nrCsiSinr = extendedData.nrCsiSinr,
+            nrSsRsrp = extendedData.nrSsRsrp,
+            nrSsSinr = extendedData.nrSsSinr
+        )
+    }
+
+    /**
+     * Phase 2.3: Extracts extended radio data from ServiceState and CellInfo.
+     */
+    private data class ExtendedRadioData(
+        val nrState: String? = null,
+        val isEndcAvailable: Boolean = false,
+        val overrideNetworkType: String? = null,
+        val lteBandwidth: Int? = null,
+        val nrCsiRsrp: Int? = null,
+        val nrCsiSinr: Int? = null,
+        val nrSsRsrp: Int? = null,
+        val nrSsSinr: Int? = null
+    )
+
+    private fun getExtendedRadioData(): ExtendedRadioData {
+        var nrState: String? = null
+        var isEndcAvailable = false
+        var overrideNetworkType: String? = null
+        var lteBandwidth: Int? = null
+        var nrCsiRsrp: Int? = null
+        var nrCsiSinr: Int? = null
+        var nrSsRsrp: Int? = null
+        var nrSsSinr: Int? = null
+
+        try {
+            // Get ServiceState for NR state and EN-DC
+            // NR state is available from API 29 (Android 10)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val serviceState = telephonyManager.serviceState
+                serviceState?.let { state ->
+                    // Get NR state (available from API 29)
+                    // Note: Using reflection since nrState might not be in compiled stubs for minSdk 26
+                    var nrStateInt = -1
+                    try {
+                        // Access nrState via reflection (it's a public field from API 29)
+                        @Suppress("DEPRECATION")
+                        val nrStateField = android.telephony.ServiceState::class.java.getDeclaredField("mNrState")
+                        nrStateField.isAccessible = true
+                        nrStateInt = (nrStateField.get(state) as? Int) ?: -1
+                    } catch (e: Exception) {
+                        // Property not available, skip NR state detection
+                        nrStateInt = -1
+                    }
+
+                    if (nrStateInt >= 0) {
+                        // Constants available from API 29
+                        nrState = when (nrStateInt) {
+                            3 -> "CONNECTED" // ServiceState.STATE_NR_CONNECTED
+                            2 -> "NOT_RESTRICTED" // ServiceState.STATE_NR_NOT_RESTRICTED
+                            1 -> "RESTRICTED" // ServiceState.STATE_NR_RESTRICTED
+                            0 -> "NONE" // ServiceState.STATE_NR_NONE
+                            else -> "NONE"
+                        }
+
+                        // Check for EN-DC (E-UTRA-NR Dual Connectivity)
+                        isEndcAvailable = (nrStateInt == 3 || nrStateInt == 2) // CONNECTED or NOT_RESTRICTED
+                    }
+                }
+            }
+
+            // Get DisplayInfo for override network type (5G icon type)
+            // NetworkRegistrationInfo is available from API 29
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                try {
+                    val registrationInfoList = telephonyManager.serviceState?.networkRegistrationInfoList
+                    val displayInfo = registrationInfoList?.firstOrNull()
+                    displayInfo?.let { info ->
+                        // Get current network type for comparison
+                        val currentNetworkType = getCurrentNetworkType()
+                        // Determine override network type based on NR state
+                        overrideNetworkType = when {
+                            nrState == "CONNECTED" -> "NR_NSA"
+                            nrState == "NOT_RESTRICTED" -> "NR_NSA"
+                            currentNetworkType.contains("5G") || currentNetworkType.contains("NR") -> "NR_NSA"
+                            currentNetworkType.contains("LTE") || currentNetworkType.contains("4G") -> "LTE_CA"
+                            else -> null
+                        }
+                    }
+                } catch (e: Exception) {
+                    // API not available, silently continue
+                }
+            }
+
+            // Get detailed cell info for bandwidth and NR metrics
+            val cellInfoList = telephonyManager.allCellInfo
+            cellInfoList?.forEach { cellInfo ->
+                when (cellInfo) {
+                    is CellInfoLte -> {
+                        val cellIdentity = cellInfo.cellIdentity
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            lteBandwidth = cellIdentity.bandwidth
+                        }
+                    }
+                    is CellInfoNr -> {
+                        val signalStrength = cellInfo.cellSignalStrength as? CellSignalStrengthNr
+                        signalStrength?.let { nrSignal ->
+                            nrCsiRsrp = nrSignal.csiRsrp
+                            nrCsiSinr = nrSignal.csiSinr
+                            nrSsRsrp = nrSignal.ssRsrp
+                            nrSsSinr = nrSignal.ssSinr
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Silently handle exceptions for unavailable APIs
+            e.printStackTrace()
+        }
+
+        return ExtendedRadioData(
+            nrState = nrState,
+            isEndcAvailable = isEndcAvailable,
+            overrideNetworkType = overrideNetworkType,
+            lteBandwidth = lteBandwidth,
+            nrCsiRsrp = nrCsiRsrp,
+            nrCsiSinr = nrCsiSinr,
+            nrSsRsrp = nrSsRsrp,
+            nrSsSinr = nrSsSinr
         )
     }
 
@@ -2586,8 +4105,14 @@ class TelephonyMonitor(private val context: Context) {
      * Stops monitoring.
      */
     fun stopMonitoring() {
-        phoneStateListener?.let {
-            telephonyManager.listen(it, PhoneStateListener.LISTEN_NONE)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            signalStrengthCallback?.let {
+                telephonyManager.unregisterTelephonyCallback(it as android.telephony.TelephonyCallback)
+            }
+        } else {
+            phoneStateListener?.let {
+                telephonyManager.listen(it, PhoneStateListener.LISTEN_NONE)
+            }
         }
         signalStrengthCallback = null
         phoneStateListener = null
@@ -2596,6 +4121,7 @@ class TelephonyMonitor(private val context: Context) {
 
 /**
  * Data class for signal information with extended cell details.
+ * Updated per Phase 2.3: Added extended radio data fields.
  */
 data class SignalData(
     val signalStrength: Int, // RSRP in dBm
@@ -2624,7 +4150,16 @@ data class SignalData(
     val rsrq: Int = 0, // Reference Signal Received Quality in dB
     val snr: Int = 0, // Signal-to-Noise Ratio in dB
     val cqi: Int = 0, // Channel Quality Indicator
-    val timingAdvance: Int = 0 // Timing Advance
+    val timingAdvance: Int = 0, // Timing Advance
+    // Phase 2.3: Extended Radio Data (5G / Advanced LTE)
+    val isEndcAvailable: Boolean = false, // "EN-DC Available"
+    val nrState: String? = null, // "NR State" (NONE, RESTRICTED, NOT_RESTRICTED, CONNECTED)
+    val overrideNetworkType: String? = null, // e.g., LTE_CA, NR_NSA, NR_ADVANCED
+    val lteBandwidth: Int? = null, // DL Bandwidth for LTE
+    val nrCsiRsrp: Int? = null, // NR CSI-RSRP
+    val nrCsiSinr: Int? = null, // NR CSI-SINR
+    val nrSsRsrp: Int? = null, // NR SS-RSRP
+    val nrSsSinr: Int? = null // NR SS-SINR
 )
 
 ================
@@ -2636,6 +4171,7 @@ import java.time.Instant
 
 /**
  * Represents a single signal measurement record with location and telephony data.
+ * Updated per Phase 2: Removed dataRateKbps (estimated data), added velocity and extended radio data.
  */
 data class SignalRecord(
     val timestamp: Instant,
@@ -2644,9 +4180,14 @@ data class SignalRecord(
     val altitude: Double = 0.0, // GPS altitude in meters
     val signalStrength: Int, // RSRP in dBm (negative value, e.g., -85)
     val cellId: Int,
-    val dataRateKbps: Int, // Estimated data rate in Kbps
+    // REMOVED: dataRateKbps - was estimated data, not real measurement
     val networkType: String, // "4G", "5G", "LTE", etc.
     val asu: Int = 0, // Additional Signal Unit (optional)
+
+    // Phase 2.2: Velocity & Location Metadata
+    val speedMps: Float? = null, // Meters per second (raw from GPS)
+    val bearing: Float? = null, // Direction of travel (0-360)
+    val gpsAccuracy: Float? = null, // GPS accuracy in meters
     // Extended cell details
     val dataState: String = "Unknown", // Connected, Disconnected, etc.
     val dataActivity: String = "None", // None, Up, Down, InOut
@@ -2676,27 +4217,53 @@ data class SignalRecord(
     val rsrq: Int = 0, // Reference Signal Received Quality in dB
     val snr: Int = 0, // Signal-to-Noise Ratio in dB
     val cqi: Int = 0, // Channel Quality Indicator
-    val timingAdvance: Int = 0 // Timing Advance
+    val timingAdvance: Int = 0, // Timing Advance
+
+    // Phase 2.3: Extended Radio Data (5G / Advanced LTE)
+    val isEndcAvailable: Boolean = false, // "EN-DC Available"
+    val nrState: String? = null, // "NR State" (NONE, RESTRICTED, NOT_RESTRICTED, CONNECTED)
+    val overrideNetworkType: String? = null, // e.g., LTE_CA, NR_NSA, NR_ADVANCED
+    val lteBandwidth: Int? = null, // DL Bandwidth for LTE
+    val nrCsiRsrp: Int? = null, // NR CSI-RSRP
+    val nrCsiSinr: Int? = null, // NR CSI-SINR
+    val nrSsRsrp: Int? = null, // NR SS-RSRP
+    val nrSsSinr: Int? = null // NR SS-SINR
 ) {
     /**
      * Converts signal strength to a normalized value (0.0 to 1.0) for color mapping.
+     * MOVED TO UI LAYER per Phase 2.1 - This is a UI presentation concern.
      * Typical RSRP range: -140 dBm (weak) to -50 dBm (strong)
+     *
+     * @deprecated Use UI layer calculation instead. This method is kept for backward compatibility.
      */
+    @Deprecated("Calculate normalized strength in UI layer instead", ReplaceWith("calculateNormalizedStrength(signalStrength)"))
     fun getNormalizedStrength(): Float {
-        val minStrength = -140f
-        val maxStrength = -50f
-        val normalized = (signalStrength - minStrength) / (maxStrength - minStrength)
-        return normalized.coerceIn(0f, 1f)
+        return calculateNormalizedStrength(signalStrength)
+    }
+
+    /**
+     * Static helper for UI layer to calculate normalized strength.
+     */
+    companion object {
+        fun calculateNormalizedStrength(signalStrength: Int): Float {
+            val minStrength = -140f
+            val maxStrength = -50f
+            val normalized = (signalStrength - minStrength) / (maxStrength - minStrength)
+            return normalized.coerceIn(0f, 1f)
+        }
     }
 
     /**
      * Converts to CSV format
      */
     fun toCsvRow(): String {
-        return "${timestamp.toEpochMilli()},$latitude,$longitude,$altitude,$signalStrength,$cellId,$dataRateKbps,$networkType,$asu," +
+        // Updated CSV format: removed dataRateKbps, added speed/bearing/accuracy and extended radio data
+        return "${timestamp.toEpochMilli()},$latitude,$longitude,$altitude,${speedMps ?: ""},${bearing ?: ""},${gpsAccuracy ?: ""}," +
+                "$signalStrength,$cellId,$networkType,$asu," +
                 "$dataState,$dataActivity,$isRoaming,$simState,\"$simOperatorName\",$simMcc,$simMnc,\"$operatorName\",$mcc,$mnc,$phoneType," +
                 "$simSlotIndex,$subscriptionId,\"$simDisplayName\",$isEmbedded," +
-                "$ci,$enb,$tac,$pci,$bandwidth,$earfcn,$nrarfcn,$rssi,$rsrq,$snr,$cqi,$timingAdvance"
+                "$ci,$enb,$tac,$pci,${lteBandwidth ?: bandwidth},$earfcn,$nrarfcn,$rssi,$rsrq,$snr,$cqi,$timingAdvance," +
+                "$isEndcAvailable,${nrState ?: ""},${overrideNetworkType ?: ""},${nrCsiRsrp ?: ""},${nrCsiSinr ?: ""},${nrSsRsrp ?: ""},${nrSsSinr ?: ""}"
     }
 
     /**
@@ -2710,7 +4277,9 @@ data class SignalRecord(
                 <extensions>
                     <signal:strength>$signalStrength</signal:strength>
                     <signal:cellId>$cellId</signal:cellId>
-                    <signal:dataRate>$dataRateKbps</signal:dataRate>
+                    <signal:speedMps>${speedMps ?: ""}</signal:speedMps>
+                    <signal:bearing>${bearing ?: ""}</signal:bearing>
+                    <signal:gpsAccuracy>${gpsAccuracy ?: ""}</signal:gpsAccuracy>
                     <signal:networkType>$networkType</signal:networkType>
                     <signal:asu>$asu</signal:asu>
                     <signal:dataState>$dataState</signal:dataState>
@@ -2740,6 +4309,14 @@ data class SignalRecord(
                     <signal:snr>$snr</signal:snr>
                     <signal:cqi>$cqi</signal:cqi>
                     <signal:timingAdvance>$timingAdvance</signal:timingAdvance>
+                    <signal:isEndcAvailable>$isEndcAvailable</signal:isEndcAvailable>
+                    <signal:nrState>${nrState ?: ""}</signal:nrState>
+                    <signal:overrideNetworkType>${overrideNetworkType ?: ""}</signal:overrideNetworkType>
+                    <signal:lteBandwidth>${lteBandwidth ?: ""}</signal:lteBandwidth>
+                    <signal:nrCsiRsrp>${nrCsiRsrp ?: ""}</signal:nrCsiRsrp>
+                    <signal:nrCsiSinr>${nrCsiSinr ?: ""}</signal:nrCsiSinr>
+                    <signal:nrSsRsrp>${nrSsRsrp ?: ""}</signal:nrSsRsrp>
+                    <signal:nrSsSinr>${nrSsSinr ?: ""}</signal:nrSsSinr>
                 </extensions>
             </trkpt>
         """.trimIndent()
@@ -2798,6 +4375,8 @@ class LoggingService : Service() {
 
     // WakeLock to keep CPU awake during logging
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wakeLockRefreshJob: kotlinx.coroutines.Job? = null
+    private var isLoggingActive = false
 
     override fun onCreate() {
         super.onCreate()
@@ -2833,8 +4412,22 @@ class LoggingService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun startLogging() {
-        // Acquire WakeLock to keep CPU awake during logging (10 hour safety timeout)
-        wakeLock?.acquire(10 * 60 * 60 * 1000L)
+        isLoggingActive = true
+
+        // Acquire WakeLock with timeout-based refresh (Phase 1.3)
+        // Refresh every 30 minutes instead of hardcoded 10 hours
+        wakeLock?.acquire(30 * 60 * 1000L) // 30 minutes
+
+        // Start periodic refresh job
+        wakeLockRefreshJob = serviceScope.launch {
+            while (isLoggingActive) {
+                kotlinx.coroutines.delay(25 * 60 * 1000L) // Refresh every 25 minutes
+                if (isLoggingActive && wakeLock?.isHeld == true) {
+                    wakeLock?.release()
+                    wakeLock?.acquire(30 * 60 * 1000L)
+                }
+            }
+        }
 
         val filename = currentIntent?.getStringExtra(EXTRA_FILENAME) ?: "signal_log_${System.currentTimeMillis()}"
         signalRepository.setFilename(filename)
@@ -2864,6 +4457,10 @@ class LoggingService : Service() {
     }
 
     private fun stopLogging() {
+        isLoggingActive = false
+        wakeLockRefreshJob?.cancel()
+        wakeLockRefreshJob = null
+
         // Stop collecting first
         locationProvider.stopLocationUpdates()
         telephonyMonitor.stopMonitoring()
@@ -2881,7 +4478,7 @@ class LoggingService : Service() {
             updateNotification("Logging stopped")
             stopForeground(STOP_FOREGROUND_REMOVE)
 
-            // Release WakeLock
+            // Release WakeLock immediately (Phase 1.3)
             if (wakeLock?.isHeld == true) {
                 wakeLock?.release()
             }
@@ -2901,7 +4498,6 @@ class LoggingService : Service() {
             val record = signalRepository.createRecord(
                 location = location,
                 signalData = signalData,
-                dataRate = estimateDataRateForNetwork(signalData.networkType, signalData.signalStrength),
                 simSlotIndex = simSlotIndex,
                 subscriptionId = subscriptionId,
                 simDisplayName = simDisplayName,
@@ -2911,28 +4507,6 @@ class LoggingService : Service() {
             record?.let {
                 signalRepository.addRecord(it)
             }
-        }
-    }
-
-    private fun estimateDataRateForNetwork(networkType: String, signalStrength: Int): Int {
-        return when (networkType) {
-            "5G" -> {
-                when {
-                    signalStrength > -70 -> 50000
-                    signalStrength > -90 -> 30000
-                    else -> 10000
-                }
-            }
-            "LTE", "4G" -> {
-                when {
-                    signalStrength > -70 -> 20000
-                    signalStrength > -90 -> 10000
-                    else -> 5000
-                }
-            }
-            "HSPA+", "HSPA" -> 5000
-            "3G" -> 2000
-            else -> 1000
         }
     }
 
@@ -3054,7 +4628,7 @@ class SignalDriveLoggerApplication : Application() {
         telephonyMonitor = TelephonyMonitor(this)
         fileLogger = FileLogger(this)
         multiSimMonitor = MultiSimMonitor(this)
-        signalRepository = SignalRepository(locationProvider, telephonyMonitor, fileLogger)
+        signalRepository = SignalRepository(this, locationProvider, telephonyMonitor, fileLogger)
     }
 }
 
@@ -3183,7 +4757,9 @@ class LoggingViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun clearRecords() {
-        signalRepository.clearRecords()
+        viewModelScope.launch {
+            signalRepository.clearRecords()
+        }
     }
 
     fun hasLocationPermission(): Boolean {
@@ -3777,6 +5353,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -3823,14 +5400,61 @@ fun MapScreen(
         }
     }
 
-    // Store map controller and location overlay references for centering
+    // Store map controller, map view, and location overlay references
     val mapControllerRef = remember { mutableStateOf<IMapController?>(null) }
+    val mapViewRef = remember { mutableStateOf<MapView?>(null) }
     val locationOverlayRef = remember { mutableStateOf<MyLocationNewOverlay?>(null) }
+
+    // Track autocentering state - enable by default when logging
+    val isLogging by viewModel.isLogging.collectAsState()
+    var isAutoCenteringEnabled by remember { mutableStateOf(true) }
+
+    // Reset autocentering to enabled when logging starts
+    LaunchedEffect(isLogging) {
+        if (isLogging) {
+            isAutoCenteringEnabled = true
+        }
+    }
 
     // Initialize osmdroid configuration
     LaunchedEffect(Unit) {
         Configuration.getInstance().load(context, context.getSharedPreferences("osmdroid", android.content.Context.MODE_PRIVATE))
         Configuration.getInstance().userAgentValue = context.packageName
+    }
+
+
+    // Autocentering: Periodically check location and center map when enabled
+    LaunchedEffect(isAutoCenteringEnabled, isLogging, locationOverlayRef.value, mapControllerRef.value) {
+        if (!isAutoCenteringEnabled || !isLogging) return@LaunchedEffect
+
+        val overlay = locationOverlayRef.value
+        val controller = mapControllerRef.value
+
+        if (overlay == null || controller == null) return@LaunchedEffect
+
+        var lastLocation: android.location.Location? = null
+
+        // Check for location updates every 1 second
+        while (isAutoCenteringEnabled && isLogging) {
+            val currentOverlay = locationOverlayRef.value
+            val currentController = mapControllerRef.value
+
+            if (currentOverlay == null || currentController == null) break
+
+            val overlayLocation = currentOverlay.lastFix
+            if (overlayLocation != null) {
+                // Only center if location has changed significantly (more than 10 meters)
+                val shouldCenter = lastLocation == null ||
+                    overlayLocation.distanceTo(lastLocation) > 10.0f
+
+                if (shouldCenter) {
+                    val point = GeoPoint(overlayLocation.latitude, overlayLocation.longitude)
+                    currentController.animateTo(point)
+                    lastLocation = overlayLocation
+                }
+            }
+            delay(1000) // Check every second
+        }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -3841,6 +5465,9 @@ fun MapScreen(
                     setMultiTouchControls(true)
                     minZoomLevel = 3.0
                     maxZoomLevel = 21.0
+
+                    // Store references
+                    mapViewRef.value = this
 
                     // Set initial position
                     val initialRecords = if (selectedSimIds.isEmpty()) {
@@ -3870,7 +5497,8 @@ fun MapScreen(
             },
             modifier = Modifier.fillMaxSize(),
             update = { mapView ->
-                // Store controller reference
+                // Store references
+                mapViewRef.value = mapView
                 mapControllerRef.value = mapView.controller
 
                 // Update map when filtered records change
@@ -3878,12 +5506,15 @@ fun MapScreen(
             }
         )
 
-        // Center on location button
+        // Center on location button - toggles autocentering and centers once
         IconButton(
             onClick = {
                 val controller = mapControllerRef.value
                 if (controller != null) {
-                    // Try to get location from ViewModel first
+                    // Toggle autocentering
+                    isAutoCenteringEnabled = !isAutoCenteringEnabled
+
+                    // Center on current location
                     val location = currentLocation
                     if (location != null) {
                         val point = GeoPoint(location.latitude, location.longitude)
@@ -3897,7 +5528,7 @@ fun MapScreen(
                                 val point = GeoPoint(lastFix.latitude, lastFix.longitude)
                                 controller.animateTo(point)
                             } else {
-                                // If no location available, center on first record or show message
+                                // If no location available, center on first record
                                 if (filteredRecords.isNotEmpty()) {
                                     val firstRecord = filteredRecords.first()
                                     val point = GeoPoint(firstRecord.latitude, firstRecord.longitude)
@@ -3910,13 +5541,13 @@ fun MapScreen(
             },
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(8.dp)
+                .padding(top = 8.dp, end = 8.dp)
                 .size(40.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.MyLocation,
-                contentDescription = "Center on current location",
-                tint = MaterialTheme.colorScheme.primary,
+                contentDescription = if (isAutoCenteringEnabled) "Disable autocentering" else "Enable autocentering",
+                tint = if (isAutoCenteringEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
             )
         }
@@ -4042,7 +5673,7 @@ private fun SimSelectorButtons(
             modifier = Modifier.padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            sims.forEachIndexed { index, sim ->
+            sims.forEach { sim ->
                 val isSelected = sim.subscriptionId in selectedSimIds
                 IconButton(
                     onClick = { onSimToggled(sim.subscriptionId) },
@@ -4564,7 +6195,6 @@ class FileLoggerTest {
             longitude = -122.4194,
             signalStrength = -85,
             cellId = 12345,
-            dataRateKbps = 20000,
             networkType = "LTE"
         )
 
@@ -4583,7 +6213,6 @@ class FileLoggerTest {
             longitude = -122.4194,
             signalStrength = -85,
             cellId = 12345,
-            dataRateKbps = 20000,
             networkType = "LTE"
         )
 
@@ -4602,7 +6231,6 @@ class FileLoggerTest {
             longitude = 0.0,
             signalStrength = -50, // Strong signal
             cellId = 0,
-            dataRateKbps = 0,
             networkType = "LTE"
         )
 
@@ -4612,7 +6240,6 @@ class FileLoggerTest {
             longitude = 0.0,
             signalStrength = -140, // Weak signal
             cellId = 0,
-            dataRateKbps = 0,
             networkType = "LTE"
         )
 
@@ -5182,6 +6809,180 @@ exit /b %EXIT_CODE%
 if "%OS%"=="Windows_NT" endlocal
 
 :omega
+
+================
+File: IMPROVEMENT_ROADMAP.md
+================
+This is a comprehensive improvement plan designed for your development team. It addresses stability, data fidelity, and prepares the architecture for scalability and cloud synchronization.
+
+---
+
+# Improvement Plan: Cell Signal Logger Refactor
+
+## Phase 1: Stability & Architecture (Bugs & Race Conditions)
+
+**Objective:** Eliminate race conditions in data writing/reading and handle Android lifecycle events safely.
+
+### 1.1 Concurrency & Thread Safety
+*   **Current Issue:** `SignalRepository` uses a `MutableList` and `FileLogger` writes directly to disk on every event. If high-frequency updates occur (e.g., location + 5G signal changes), this creates race conditions and IO bottlenecks.
+*   **Action Plan:**
+    *   **Implement Room Database:** Replace the in-memory `_recordsList` with a SQLite database using the Room library. This guarantees ACID compliance and thread safety.
+    *   **Channel-based Writing:** Instead of writing to file immediately, use a Kotlin `Channel` or `Flow` to buffer incoming signal events. A consumer coroutine writes to the Database (and CSV/GPX if enabled) sequentially.
+    *   **Scope Management:** Ensure `LoggingService` uses a proper `ServiceLifecycleScope` so collecting flows doesn't crash if the service is stopped abruptly.
+
+### 1.2 Deprecated API Fixes
+*   **Current Issue:** `PhoneStateListener` is deprecated in Android 12 (API 31).
+*   **Action Plan:**
+    *   Implement `TelephonyCallback` for Android 12+.
+    *   Maintain `PhoneStateListener` only for legacy support (API < 31).
+    *   Ensure `ServiceState` is monitored alongside `SignalStrength` to capture the "NR State" (5G) accurately.
+
+### 1.3 WakeLock Safety
+*   **Current Issue:** The WakeLock is acquired for a hardcoded 10 hours.
+*   **Action Plan:**
+    *   Convert to a "timeout-based" refresh of the WakeLock or rely on `FOREGROUND_SERVICE_LOCATION` behavior which naturally keeps the app alive during active tracking.
+    *   Implement logic to release the WakeLock immediately upon `stopLogging()`.
+
+---
+
+## Phase 2: Data Structure Refinement
+
+**Objective:** Optimize storage, remove "guessed" data, and capture high-fidelity radio metrics shown in your screenshot.
+
+### 2.1 Remove Calculated/Redundant Data
+*   **Remove:** `dataRateKbps`. The current implementation estimates this based on signal strength. This is not real data and pollutes the dataset.
+*   **Remove:** `normalizedStrength`. This is a UI presentation concern. Calculate this in the ViewModel/UI layer only, do not store it.
+*   **Normalize:** Move static SIM data (Operator Name, Carrier Name, Display Name) to a separate `SimProfile` table in the database to avoid repeating strings in every signal row.
+
+### 2.2 Add Velocity & Location Metadata
+*   **Action:** Extract speed and bearing from the `Location` object.
+*   **Fields to Add:**
+    *   `speed_mps` (Float): Meters per second (raw from GPS).
+    *   `bearing` (Float): Direction of travel (0-360).
+    *   `location_accuracy_m` (Float): To filter out bad GPS fixes later.
+
+### 2.3 Add Extended Radio Data (From Screenshot)
+To capture data like "NR State", "EN-DC", and specific bandwidths, we need to access `ServiceState` and specific `CellInfo` subclasses.
+
+**New Data Model Proposal (Kotlin):**
+
+```kotlin
+@Entity(tableName = "signal_logs")
+data class SignalRecord(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val session_id: String, // To group logs by drive/session
+    val timestamp: Long,
+
+    // Location & Velocity
+    val latitude: Double,
+    val longitude: Double,
+    val altitude: Double,
+    val speed_mps: Float?, // Velocity
+    val bearing: Float?,
+    val gps_accuracy: Float?,
+
+    // Identifiers (Hashed for privacy if sharing, or raw if private)
+    val sim_slot_index: Int,
+    val subscription_id: Int,
+    // Note: Accessing IMSI requires strictly privileged permissions usually reserved for carrier apps.
+    // We will stick to standard identifiers accessible to standard apps.
+
+    // Network Identity
+    val network_type_raw: String, // e.g., LTE, NR
+    val network_operator: String, // MCC+MNC (e.g., 23420)
+    val roaming_state: Boolean,
+
+    // 5G / Advanced LTE Specifics (From ServiceState/DisplayInfo)
+    val is_endc_available: Boolean, // "EN-DC Available" in screenshot
+    val nr_state: String,           // "NR State" (NONE, RESTRICTED, NOT_RESTRICTED, CONNECTED)
+    val override_network_type: String, // e.g., LTE_CA, NR_NSA, NR_ADVANCED
+
+    // Signal Metrics
+    val dbm: Int,
+    val asu: Int,
+
+    // LTE Specifics
+    val lte_earfcn: Int?,
+    val lte_bandwidth: Int?, // DL Bandwidth
+    val lte_cqi: Int?,
+    val lte_rssi: Int?,
+
+    // NR (5G) Specifics
+    val nr_arfcn: Int?,
+    val nr_csi_rsrp: Int?,
+    val nr_csi_sinr: Int?,
+    val nr_ss_rsrp: Int?,
+    val nr_ss_sinr: Int?
+)
+```
+
+---
+
+## Phase 3: Cloud Sync Preparation
+
+**Objective:** Transition from "Save to File" to "Sync to Cloud".
+
+### 3.1 Local Store Strategy (Room Database)
+*   **Schema:** Create two tables:
+    1.  `Sessions`: Stores start time, end time, device info, and sync status (`is_synced`).
+    2.  `SignalLogs`: Stores the actual data points linked to a `session_id`.
+*   **Migration:** Ensure database versioning is enabled to handle future schema changes without data loss.
+
+### 3.2 Sync Logic (WorkManager)
+*   **Implementation:** Use Android Jetpack `WorkManager` for reliable background syncing.
+*   **Constraints:** Only sync when:
+    *   Network is `CONNECTED` (and preferably `UNMETERED`/WiFi).
+    *   Battery is not low.
+
+### 3.3 Data Payload Structure (JSON)
+Prepare a batching mechanism. Sending 1 record at a time is inefficient.
+*   **Batch Size:** 50 or 100 records per HTTP POST.
+*   **JSON Structure:**
+    ```json
+    {
+      "device_id": "uuid",
+      "session_id": "uuid",
+      "records": [
+        {
+          "timestamp": 1701768000,
+          "lat": 51.5074,
+          "lon": -0.1278,
+          "speed": 12.5,
+          "net": "LTE",
+          "dbm": -85,
+          "nr_state": "CONNECTED"
+          // ... other fields
+        }
+      ]
+    }
+    ```
+
+---
+
+## Technical Roadmap for Programming Team
+
+### Step 1: Database Implementation
+1.  Add `androidx.room` dependencies.
+2.  Create `SignalDatabase`, `SignalDao`, and the entities defined in Phase 2.3.
+3.  Refactor `SignalRepository` to write to DAO instead of `MutableList`.
+
+### Step 2: Refactor Monitors
+1.  Update `TelephonyMonitor` to listen to `onServiceStateChanged` (for 5G/NR details) and `onDisplayInfoChanged` (for 5G icons/override types).
+2.  Update `LocationProvider` to expose `Location` objects (containing Speed/Bearing) rather than flattening them immediately.
+
+### Step 3: API Integration Setup
+1.  Create a Retrofit interface for the cloud endpoint (e.g., `https://your-railway-app.app/api/v1/ingest`).
+2.  Create a `SyncWorker` class extending `CoroutineWorker`.
+3.  Implement logic in `SyncWorker` to:
+    *   Query `SignalLogs` where `is_synced = false`.
+    *   Batch data.
+    *   POST to API.
+    *   Mark records as `is_synced = true` upon 200 OK response.
+    *   Delete local records if they are older than X days (data retention policy).
+
+### Step 4: UI Updates
+1.  Update `MainScreen` to show "Velocity" in the stats card.
+2.  Add a "Sync Status" indicator (e.g., "Pending Upload: 120 records").
 
 ================
 File: index.html

@@ -20,7 +20,6 @@ class FileLoggerTest {
             longitude = -122.4194,
             signalStrength = -85,
             cellId = 12345,
-            dataRateKbps = 20000,
             networkType = "LTE"
         )
 
@@ -39,7 +38,6 @@ class FileLoggerTest {
             longitude = -122.4194,
             signalStrength = -85,
             cellId = 12345,
-            dataRateKbps = 20000,
             networkType = "LTE"
         )
 
@@ -58,7 +56,6 @@ class FileLoggerTest {
             longitude = 0.0,
             signalStrength = -50, // Strong signal
             cellId = 0,
-            dataRateKbps = 0,
             networkType = "LTE"
         )
 
@@ -68,7 +65,6 @@ class FileLoggerTest {
             longitude = 0.0,
             signalStrength = -140, // Weak signal
             cellId = 0,
-            dataRateKbps = 0,
             networkType = "LTE"
         )
 

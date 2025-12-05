@@ -4,6 +4,7 @@ import java.time.Instant
 
 /**
  * Represents a single signal measurement record with location and telephony data.
+ * Updated per Phase 2: Removed dataRateKbps (estimated data), added velocity and extended radio data.
  */
 data class SignalRecord(
     val timestamp: Instant,
@@ -12,9 +13,14 @@ data class SignalRecord(
     val altitude: Double = 0.0, // GPS altitude in meters
     val signalStrength: Int, // RSRP in dBm (negative value, e.g., -85)
     val cellId: Int,
-    val dataRateKbps: Int, // Estimated data rate in Kbps
+    // REMOVED: dataRateKbps - was estimated data, not real measurement
     val networkType: String, // "4G", "5G", "LTE", etc.
     val asu: Int = 0, // Additional Signal Unit (optional)
+
+    // Phase 2.2: Velocity & Location Metadata
+    val speedMps: Float? = null, // Meters per second (raw from GPS)
+    val bearing: Float? = null, // Direction of travel (0-360)
+    val gpsAccuracy: Float? = null, // GPS accuracy in meters
     // Extended cell details
     val dataState: String = "Unknown", // Connected, Disconnected, etc.
     val dataActivity: String = "None", // None, Up, Down, InOut
@@ -44,27 +50,53 @@ data class SignalRecord(
     val rsrq: Int = 0, // Reference Signal Received Quality in dB
     val snr: Int = 0, // Signal-to-Noise Ratio in dB
     val cqi: Int = 0, // Channel Quality Indicator
-    val timingAdvance: Int = 0 // Timing Advance
+    val timingAdvance: Int = 0, // Timing Advance
+
+    // Phase 2.3: Extended Radio Data (5G / Advanced LTE)
+    val isEndcAvailable: Boolean = false, // "EN-DC Available"
+    val nrState: String? = null, // "NR State" (NONE, RESTRICTED, NOT_RESTRICTED, CONNECTED)
+    val overrideNetworkType: String? = null, // e.g., LTE_CA, NR_NSA, NR_ADVANCED
+    val lteBandwidth: Int? = null, // DL Bandwidth for LTE
+    val nrCsiRsrp: Int? = null, // NR CSI-RSRP
+    val nrCsiSinr: Int? = null, // NR CSI-SINR
+    val nrSsRsrp: Int? = null, // NR SS-RSRP
+    val nrSsSinr: Int? = null // NR SS-SINR
 ) {
     /**
      * Converts signal strength to a normalized value (0.0 to 1.0) for color mapping.
+     * MOVED TO UI LAYER per Phase 2.1 - This is a UI presentation concern.
      * Typical RSRP range: -140 dBm (weak) to -50 dBm (strong)
+     *
+     * @deprecated Use UI layer calculation instead. This method is kept for backward compatibility.
      */
+    @Deprecated("Calculate normalized strength in UI layer instead", ReplaceWith("calculateNormalizedStrength(signalStrength)"))
     fun getNormalizedStrength(): Float {
-        val minStrength = -140f
-        val maxStrength = -50f
-        val normalized = (signalStrength - minStrength) / (maxStrength - minStrength)
-        return normalized.coerceIn(0f, 1f)
+        return calculateNormalizedStrength(signalStrength)
+    }
+
+    /**
+     * Static helper for UI layer to calculate normalized strength.
+     */
+    companion object {
+        fun calculateNormalizedStrength(signalStrength: Int): Float {
+            val minStrength = -140f
+            val maxStrength = -50f
+            val normalized = (signalStrength - minStrength) / (maxStrength - minStrength)
+            return normalized.coerceIn(0f, 1f)
+        }
     }
 
     /**
      * Converts to CSV format
      */
     fun toCsvRow(): String {
-        return "${timestamp.toEpochMilli()},$latitude,$longitude,$altitude,$signalStrength,$cellId,$dataRateKbps,$networkType,$asu," +
+        // Updated CSV format: removed dataRateKbps, added speed/bearing/accuracy and extended radio data
+        return "${timestamp.toEpochMilli()},$latitude,$longitude,$altitude,${speedMps ?: ""},${bearing ?: ""},${gpsAccuracy ?: ""}," +
+                "$signalStrength,$cellId,$networkType,$asu," +
                 "$dataState,$dataActivity,$isRoaming,$simState,\"$simOperatorName\",$simMcc,$simMnc,\"$operatorName\",$mcc,$mnc,$phoneType," +
                 "$simSlotIndex,$subscriptionId,\"$simDisplayName\",$isEmbedded," +
-                "$ci,$enb,$tac,$pci,$bandwidth,$earfcn,$nrarfcn,$rssi,$rsrq,$snr,$cqi,$timingAdvance"
+                "$ci,$enb,$tac,$pci,${lteBandwidth ?: bandwidth},$earfcn,$nrarfcn,$rssi,$rsrq,$snr,$cqi,$timingAdvance," +
+                "$isEndcAvailable,${nrState ?: ""},${overrideNetworkType ?: ""},${nrCsiRsrp ?: ""},${nrCsiSinr ?: ""},${nrSsRsrp ?: ""},${nrSsSinr ?: ""}"
     }
 
     /**
@@ -78,7 +110,9 @@ data class SignalRecord(
                 <extensions>
                     <signal:strength>$signalStrength</signal:strength>
                     <signal:cellId>$cellId</signal:cellId>
-                    <signal:dataRate>$dataRateKbps</signal:dataRate>
+                    <signal:speedMps>${speedMps ?: ""}</signal:speedMps>
+                    <signal:bearing>${bearing ?: ""}</signal:bearing>
+                    <signal:gpsAccuracy>${gpsAccuracy ?: ""}</signal:gpsAccuracy>
                     <signal:networkType>$networkType</signal:networkType>
                     <signal:asu>$asu</signal:asu>
                     <signal:dataState>$dataState</signal:dataState>
@@ -108,6 +142,14 @@ data class SignalRecord(
                     <signal:snr>$snr</signal:snr>
                     <signal:cqi>$cqi</signal:cqi>
                     <signal:timingAdvance>$timingAdvance</signal:timingAdvance>
+                    <signal:isEndcAvailable>$isEndcAvailable</signal:isEndcAvailable>
+                    <signal:nrState>${nrState ?: ""}</signal:nrState>
+                    <signal:overrideNetworkType>${overrideNetworkType ?: ""}</signal:overrideNetworkType>
+                    <signal:lteBandwidth>${lteBandwidth ?: ""}</signal:lteBandwidth>
+                    <signal:nrCsiRsrp>${nrCsiRsrp ?: ""}</signal:nrCsiRsrp>
+                    <signal:nrCsiSinr>${nrCsiSinr ?: ""}</signal:nrCsiSinr>
+                    <signal:nrSsRsrp>${nrSsRsrp ?: ""}</signal:nrSsRsrp>
+                    <signal:nrSsSinr>${nrSsSinr ?: ""}</signal:nrSsSinr>
                 </extensions>
             </trkpt>
         """.trimIndent()

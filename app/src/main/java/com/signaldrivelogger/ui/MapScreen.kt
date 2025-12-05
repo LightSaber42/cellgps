@@ -70,11 +70,16 @@ fun MapScreen(
     }
 
     // Get filtered records based on selected SIMs
+    // Fix: Include records with invalid subscriptionId (-1) when filtering, as they may be from older logs
+    // or single-SIM devices. Only filter out records that have a valid subscriptionId that doesn't match.
     val filteredRecords = remember(records, selectedSimIds) {
         if (selectedSimIds.isEmpty()) {
             records // Show all if none selected
         } else {
-            records.filter { it.subscriptionId in selectedSimIds }
+            records.filter { record ->
+                // Include if subscriptionId is invalid (-1) or matches selected SIMs
+                record.subscriptionId < 0 || record.subscriptionId in selectedSimIds
+            }
         }
     }
 
@@ -151,7 +156,10 @@ fun MapScreen(
                     val initialRecords = if (selectedSimIds.isEmpty()) {
                         records
                     } else {
-                        records.filter { it.subscriptionId in selectedSimIds }
+                        records.filter { record ->
+                            // Include if subscriptionId is invalid (-1) or matches selected SIMs
+                            record.subscriptionId < 0 || record.subscriptionId in selectedSimIds
+                        }
                     }
                     val initialPoint = if (initialRecords.isNotEmpty()) {
                         GeoPoint(initialRecords.first().latitude, initialRecords.first().longitude)

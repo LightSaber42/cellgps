@@ -52,6 +52,8 @@ fun MainScreen(
     val isLogging by viewModel.isLogging.collectAsState()
     val records by viewModel.records.collectAsState()
     val currentSignalDataBySim by viewModel.currentSignalDataBySim.collectAsState()
+    val latestRecord by viewModel.latestRecord.collectAsState()
+    val unsyncedCount by viewModel.unsyncedCount.collectAsState()
     val filename by viewModel.filename.collectAsState()
 
     var filenameInput by remember { mutableStateOf(filename) }
@@ -93,14 +95,38 @@ fun MainScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Title
-            Text(
-                text = "Cell Signal Logger",
-                style = MaterialTheme.typography.headlineMedium
-            )
+            // Title with Sync Status
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Cell Signal Logger",
+                    style = MaterialTheme.typography.headlineMedium
+                )
+
+                // Phase 2: Sync Status Indicator
+                if (unsyncedCount > 0) {
+                    Text(
+                        text = "⏳ $unsyncedCount Pending",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Text(
+                        text = "✅ Synced",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
 
             // Current Signal Info Card
-            SignalInfoCard(signalDataBySim = currentSignalDataBySim)
+            SignalInfoCard(
+                signalDataBySim = currentSignalDataBySim,
+                latestRecord = latestRecord
+            )
 
             // Filename Input
             OutlinedTextField(
@@ -148,6 +174,15 @@ fun MainScreen(
                 Text("Import CSV File")
             }
 
+            // Phase 1: Manual Sync Button
+            Button(
+                onClick = { viewModel.syncNow() },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isLogging && unsyncedCount > 0
+            ) {
+                Text(if (unsyncedCount > 0) "Sync Now ($unsyncedCount records)" else "Sync Now")
+            }
+
             // File Actions
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -179,20 +214,22 @@ fun MainScreen(
             // Export/Share Button
             Button(
                 onClick = {
-                    val file = viewModel.exportFile()
-                    file?.let {
-                        val uri = androidx.core.content.FileProvider.getUriForFile(
-                            context,
-                            "${context.packageName}.fileprovider",
-                            it
-                        )
-                        val shareIntent = Intent().apply {
-                            action = Intent.ACTION_SEND
-                            putExtra(Intent.EXTRA_STREAM, uri)
-                            type = "text/csv"
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    scope.launch {
+                        val file = viewModel.exportFile()
+                        file?.let {
+                            val uri = androidx.core.content.FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                it
+                            )
+                            val shareIntent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                type = "text/csv"
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share log file"))
                         }
-                        context.startActivity(Intent.createChooser(shareIntent, "Share log file"))
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -239,9 +276,13 @@ fun MainScreen(
 
 /**
  * Card displaying current signal information for all SIMs.
+ * Phase 2: Updated to show velocity and bearing.
  */
 @Composable
-private fun SignalInfoCard(signalDataBySim: Map<Int, SignalData>) {
+private fun SignalInfoCard(
+    signalDataBySim: Map<Int, SignalData>,
+    latestRecord: com.signaldrivelogger.domain.models.SignalRecord? = null
+) {
     Card(
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -263,6 +304,25 @@ private fun SignalInfoCard(signalDataBySim: Map<Int, SignalData>) {
                 Text("Strength: $strengths dBm")
                 Text("Network: $networks")
                 Text("Cell ID: $cellIds")
+
+                // Phase 2: Display velocity and bearing
+                latestRecord?.let { record ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    record.speedMps?.let { speed ->
+                        // Convert m/s to km/h (more user-friendly)
+                        val speedKmh = speed * 3.6f
+                        // Only show if speed is significant (> 0.5 m/s = 1.8 km/h to avoid noise)
+                        if (speedKmh > 1.8f) {
+                            Text("Speed: ${String.format("%.1f", speedKmh)} km/h")
+                        } else {
+                            Text("Speed: Stationary")
+                        }
+                    } ?: Text("Speed: N/A")
+
+                    record.bearing?.let { bearing ->
+                        Text("Bearing: ${String.format("%.0f", bearing)}°")
+                    }
+                }
             } else {
                 Text("No signal data available")
             }

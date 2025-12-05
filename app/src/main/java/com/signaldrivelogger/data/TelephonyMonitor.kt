@@ -153,16 +153,35 @@ class TelephonyMonitor(private val context: Context) {
         // Update initial values
         emitSignalData()
 
-        // Use PhoneStateListener for all Android versions
-        // Note: SignalStrengthCallback (API 31+) requires different approach, using PhoneStateListener for compatibility
-        phoneStateListener = object : PhoneStateListener() {
-            override fun onSignalStrengthsChanged(signalStrength: SignalStrength) {
-                val dbm = convertToDbm(signalStrength)
-                _currentSignalStrength.value = dbm
-                emitSignalData()
+        // Phase 1.2: Use TelephonyCallback for Android 12+ (API 31+), PhoneStateListener for legacy
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            // Android 12+ (API 31+): Use TelephonyCallback
+            val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+            signalStrengthCallback = object : android.telephony.TelephonyCallback(), android.telephony.TelephonyCallback.SignalStrengthsListener {
+                override fun onSignalStrengthsChanged(signalStrength: SignalStrength) {
+                    val dbm = convertToDbm(signalStrength)
+                    _currentSignalStrength.value = dbm
+                    emitSignalData()
+                }
             }
+            telephonyManager.registerTelephonyCallback(executor, signalStrengthCallback as android.telephony.TelephonyCallback)
+        } else {
+            // Legacy: Use PhoneStateListener for API < 31
+            phoneStateListener = object : PhoneStateListener() {
+                override fun onSignalStrengthsChanged(signalStrength: SignalStrength) {
+                    val dbm = convertToDbm(signalStrength)
+                    _currentSignalStrength.value = dbm
+                    emitSignalData()
+                }
+
+                // Phase 1.2 & 2.3: Monitor ServiceState for NR state and 5G details
+                @Suppress("DEPRECATION")
+                override fun onServiceStateChanged(serviceState: android.telephony.ServiceState?) {
+                    emitSignalData() // Re-emit with updated service state
+                }
+            }
+            telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS or PhoneStateListener.LISTEN_SERVICE_STATE)
         }
-        telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS)
 
         // Periodically emit updates
         updateRunnable = object : Runnable {
@@ -175,8 +194,14 @@ class TelephonyMonitor(private val context: Context) {
 
         awaitClose {
             updateRunnable?.let { handler.removeCallbacks(it) }
-            phoneStateListener?.let {
-                telephonyManager.listen(it, PhoneStateListener.LISTEN_NONE)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                signalStrengthCallback?.let {
+                    telephonyManager.unregisterTelephonyCallback(it as android.telephony.TelephonyCallback)
+                }
+            } else {
+                phoneStateListener?.let {
+                    telephonyManager.listen(it, PhoneStateListener.LISTEN_NONE)
+                }
             }
         }
     }
@@ -359,11 +384,15 @@ class TelephonyMonitor(private val context: Context) {
 
     /**
      * Gets all cell details as SignalData.
+     * Updated per Phase 2.3: Includes extended radio data (NR state, EN-DC, etc.).
      */
     fun getAllCellDetails(): SignalData {
         val signalStrength = getCurrentSignalStrength() ?: -100
         val cellId = getCurrentCellId() ?: 0
         val networkType = getCurrentNetworkType()
+
+        // Phase 2.3: Extract extended radio data from ServiceState and CellInfo
+        val extendedData = getExtendedRadioData()
 
         return SignalData(
             signalStrength = signalStrength,
@@ -379,7 +408,137 @@ class TelephonyMonitor(private val context: Context) {
             operatorName = getOperatorName(),
             mcc = getMcc(),
             mnc = getMnc(),
-            phoneType = getPhoneType()
+            phoneType = getPhoneType(),
+            // Phase 2.3: Extended radio data
+            isEndcAvailable = extendedData.isEndcAvailable,
+            nrState = extendedData.nrState,
+            overrideNetworkType = extendedData.overrideNetworkType,
+            lteBandwidth = extendedData.lteBandwidth,
+            nrCsiRsrp = extendedData.nrCsiRsrp,
+            nrCsiSinr = extendedData.nrCsiSinr,
+            nrSsRsrp = extendedData.nrSsRsrp,
+            nrSsSinr = extendedData.nrSsSinr
+        )
+    }
+
+    /**
+     * Phase 2.3: Extracts extended radio data from ServiceState and CellInfo.
+     */
+    private data class ExtendedRadioData(
+        val nrState: String? = null,
+        val isEndcAvailable: Boolean = false,
+        val overrideNetworkType: String? = null,
+        val lteBandwidth: Int? = null,
+        val nrCsiRsrp: Int? = null,
+        val nrCsiSinr: Int? = null,
+        val nrSsRsrp: Int? = null,
+        val nrSsSinr: Int? = null
+    )
+
+    private fun getExtendedRadioData(): ExtendedRadioData {
+        var nrState: String? = null
+        var isEndcAvailable = false
+        var overrideNetworkType: String? = null
+        var lteBandwidth: Int? = null
+        var nrCsiRsrp: Int? = null
+        var nrCsiSinr: Int? = null
+        var nrSsRsrp: Int? = null
+        var nrSsSinr: Int? = null
+
+        try {
+            // Get ServiceState for NR state and EN-DC
+            // NR state is available from API 29 (Android 10)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val serviceState = telephonyManager.serviceState
+                serviceState?.let { state ->
+                    // Get NR state (available from API 29)
+                    // Note: Using reflection since nrState might not be in compiled stubs for minSdk 26
+                    var nrStateInt = -1
+                    try {
+                        // Access nrState via reflection (it's a public field from API 29)
+                        @Suppress("DEPRECATION")
+                        val nrStateField = android.telephony.ServiceState::class.java.getDeclaredField("mNrState")
+                        nrStateField.isAccessible = true
+                        nrStateInt = (nrStateField.get(state) as? Int) ?: -1
+                    } catch (e: Exception) {
+                        // Property not available, skip NR state detection
+                        nrStateInt = -1
+                    }
+
+                    if (nrStateInt >= 0) {
+                        // Constants available from API 29
+                        nrState = when (nrStateInt) {
+                            3 -> "CONNECTED" // ServiceState.STATE_NR_CONNECTED
+                            2 -> "NOT_RESTRICTED" // ServiceState.STATE_NR_NOT_RESTRICTED
+                            1 -> "RESTRICTED" // ServiceState.STATE_NR_RESTRICTED
+                            0 -> "NONE" // ServiceState.STATE_NR_NONE
+                            else -> "NONE"
+                        }
+
+                        // Check for EN-DC (E-UTRA-NR Dual Connectivity)
+                        isEndcAvailable = (nrStateInt == 3 || nrStateInt == 2) // CONNECTED or NOT_RESTRICTED
+                    }
+                }
+            }
+
+            // Get DisplayInfo for override network type (5G icon type)
+            // NetworkRegistrationInfo is available from API 29
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                try {
+                    val registrationInfoList = telephonyManager.serviceState?.networkRegistrationInfoList
+                    val displayInfo = registrationInfoList?.firstOrNull()
+                    displayInfo?.let { info ->
+                        // Get current network type for comparison
+                        val currentNetworkType = getCurrentNetworkType()
+                        // Determine override network type based on NR state
+                        overrideNetworkType = when {
+                            nrState == "CONNECTED" -> "NR_NSA"
+                            nrState == "NOT_RESTRICTED" -> "NR_NSA"
+                            currentNetworkType.contains("5G") || currentNetworkType.contains("NR") -> "NR_NSA"
+                            currentNetworkType.contains("LTE") || currentNetworkType.contains("4G") -> "LTE_CA"
+                            else -> null
+                        }
+                    }
+                } catch (e: Exception) {
+                    // API not available, silently continue
+                }
+            }
+
+            // Get detailed cell info for bandwidth and NR metrics
+            val cellInfoList = telephonyManager.allCellInfo
+            cellInfoList?.forEach { cellInfo ->
+                when (cellInfo) {
+                    is CellInfoLte -> {
+                        val cellIdentity = cellInfo.cellIdentity
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            lteBandwidth = cellIdentity.bandwidth
+                        }
+                    }
+                    is CellInfoNr -> {
+                        val signalStrength = cellInfo.cellSignalStrength as? CellSignalStrengthNr
+                        signalStrength?.let { nrSignal ->
+                            nrCsiRsrp = nrSignal.csiRsrp
+                            nrCsiSinr = nrSignal.csiSinr
+                            nrSsRsrp = nrSignal.ssRsrp
+                            nrSsSinr = nrSignal.ssSinr
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Silently handle exceptions for unavailable APIs
+            e.printStackTrace()
+        }
+
+        return ExtendedRadioData(
+            nrState = nrState,
+            isEndcAvailable = isEndcAvailable,
+            overrideNetworkType = overrideNetworkType,
+            lteBandwidth = lteBandwidth,
+            nrCsiRsrp = nrCsiRsrp,
+            nrCsiSinr = nrCsiSinr,
+            nrSsRsrp = nrSsRsrp,
+            nrSsSinr = nrSsSinr
         )
     }
 
@@ -415,8 +574,14 @@ class TelephonyMonitor(private val context: Context) {
      * Stops monitoring.
      */
     fun stopMonitoring() {
-        phoneStateListener?.let {
-            telephonyManager.listen(it, PhoneStateListener.LISTEN_NONE)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            signalStrengthCallback?.let {
+                telephonyManager.unregisterTelephonyCallback(it as android.telephony.TelephonyCallback)
+            }
+        } else {
+            phoneStateListener?.let {
+                telephonyManager.listen(it, PhoneStateListener.LISTEN_NONE)
+            }
         }
         signalStrengthCallback = null
         phoneStateListener = null
@@ -425,6 +590,7 @@ class TelephonyMonitor(private val context: Context) {
 
 /**
  * Data class for signal information with extended cell details.
+ * Updated per Phase 2.3: Added extended radio data fields.
  */
 data class SignalData(
     val signalStrength: Int, // RSRP in dBm
@@ -453,5 +619,14 @@ data class SignalData(
     val rsrq: Int = 0, // Reference Signal Received Quality in dB
     val snr: Int = 0, // Signal-to-Noise Ratio in dB
     val cqi: Int = 0, // Channel Quality Indicator
-    val timingAdvance: Int = 0 // Timing Advance
+    val timingAdvance: Int = 0, // Timing Advance
+    // Phase 2.3: Extended Radio Data (5G / Advanced LTE)
+    val isEndcAvailable: Boolean = false, // "EN-DC Available"
+    val nrState: String? = null, // "NR State" (NONE, RESTRICTED, NOT_RESTRICTED, CONNECTED)
+    val overrideNetworkType: String? = null, // e.g., LTE_CA, NR_NSA, NR_ADVANCED
+    val lteBandwidth: Int? = null, // DL Bandwidth for LTE
+    val nrCsiRsrp: Int? = null, // NR CSI-RSRP
+    val nrCsiSinr: Int? = null, // NR CSI-SINR
+    val nrSsRsrp: Int? = null, // NR SS-RSRP
+    val nrSsSinr: Int? = null // NR SS-SINR
 )

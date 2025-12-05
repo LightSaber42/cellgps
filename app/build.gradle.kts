@@ -3,6 +3,8 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("kotlin-kapt")
+    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.24"
 }
 
 // Load keystore properties if file exists
@@ -29,6 +31,11 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // Phase 1: Externalize API configuration
+        // Set this to your actual API endpoint
+        // For production, use a different URL or configure via build variants
+        buildConfigField("String", "SYNC_API_ENDPOINT", "\"https://your-railway-app.app/api/v1/ingest\"")
     }
 
     signingConfigs {
@@ -67,8 +74,16 @@ android {
         jvmTarget = "17"
     }
 
+    // Room schema export directory
+    kapt {
+        arguments {
+            arg("room.schemaLocation", "$projectDir/schemas")
+        }
+    }
+
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     composeOptions {
@@ -125,6 +140,18 @@ dependencies {
 
     // Permissions
     implementation("com.google.accompanist:accompanist-permissions:0.32.0")
+
+    // Room Database
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    kapt("androidx.room:room-compiler:$roomVersion")
+
+    // WorkManager for background sync
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    // JSON serialization for cloud sync
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

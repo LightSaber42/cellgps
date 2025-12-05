@@ -44,11 +44,14 @@ class FileLogger(private val context: Context) {
             csvWriter = java.io.BufferedWriter(java.io.FileWriter(csvFile, true))
 
             // Write header if file is new
+            // Updated header to match SignalRecord.toCsvRow() - removed data_rate_kbps, added speed_mps, bearing, gps_accuracy
             if (!headerWritten.contains("$filename.csv") && (!csvFile.exists() || csvFile.length() == 0L)) {
-                val header = "timestamp,latitude,longitude,altitude_m,signal_strength_dbm,cell_id,data_rate_kbps,network_type,asu," +
+                val header = "timestamp,latitude,longitude,altitude_m,speed_mps,bearing,gps_accuracy_m," +
+                        "signal_strength_dbm,cell_id,network_type,asu," +
                         "data_state,data_activity,roaming,sim_state,sim_operator_name,sim_mcc,sim_mnc," +
                         "operator_name,mcc,mnc,phone_type,sim_slot_index,subscription_id,sim_display_name,is_embedded," +
-                        "ci,enb,tac,pci,bandwidth_khz,earfcn,nrarfcn,rssi_dbm,rsrq_db,snr_db,cqi,timing_advance\n"
+                        "ci,enb,tac,pci,bandwidth_khz,earfcn,nrarfcn,rssi_dbm,rsrq_db,snr_db,cqi,timing_advance," +
+                        "is_endc_available,nr_state,override_network_type,nr_csi_rsrp,nr_csi_sinr,nr_ss_rsrp,nr_ss_sinr\n"
                 csvWriter?.write(header)
                 headerWritten.add("$filename.csv")
             }
@@ -188,10 +191,14 @@ class FileLogger(private val context: Context) {
      */
     suspend fun saveRecordsToCsv(records: List<SignalRecord>, filename: String) = withContext(Dispatchers.IO) {
         val file = File(recordsDir, "$filename.csv")
-        val header = "timestamp,latitude,longitude,altitude_m,signal_strength_dbm,cell_id,data_rate_kbps,network_type,asu," +
+        // Updated header to match SignalRecord.toCsvRow() - removed data_rate_kbps, added speed_mps, bearing, gps_accuracy
+        // Order matches toCsvRow(): timestamp,lat,lon,alt,speed,bearing,accuracy,signal,cell,network,asu,...
+        val header = "timestamp,latitude,longitude,altitude_m,speed_mps,bearing,gps_accuracy_m," +
+                "signal_strength_dbm,cell_id,network_type,asu," +
                 "data_state,data_activity,roaming,sim_state,sim_operator_name,sim_mcc,sim_mnc," +
                 "operator_name,mcc,mnc,phone_type,sim_slot_index,subscription_id,sim_display_name,is_embedded," +
-                "ci,enb,tac,pci,bandwidth_khz,earfcn,nrarfcn,rssi_dbm,rsrq_db,snr_db,cqi,timing_advance\n"
+                "ci,enb,tac,pci,bandwidth_khz,earfcn,nrarfcn,rssi_dbm,rsrq_db,snr_db,cqi,timing_advance," +
+                "is_endc_available,nr_state,override_network_type,nr_csi_rsrp,nr_csi_sinr,nr_ss_rsrp,nr_ss_sinr\n"
 
         file.writeText(header)
         records.forEach { record ->

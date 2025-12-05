@@ -12,6 +12,9 @@ import com.signaldrivelogger.data.TelephonyMonitor
 import com.signaldrivelogger.data.MultiSimMonitor
 import com.signaldrivelogger.domain.models.SignalRecord
 import com.signaldrivelogger.service.LoggingService
+import com.signaldrivelogger.data.sync.SyncWorker
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,6 +51,15 @@ class LoggingViewModel(application: Application) : AndroidViewModel(application)
 
     private val _records = MutableStateFlow<List<SignalRecord>>(emptyList())
     val records: StateFlow<List<SignalRecord>> = _records.asStateFlow()
+
+    // Phase 2: Latest record for velocity/bearing display
+    val latestRecord: StateFlow<SignalRecord?> = _records.asStateFlow().map { records ->
+        records.maxByOrNull { it.timestamp.toEpochMilli() }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, null)
+
+    // Phase 2: Unsynced count for sync status indicator
+    val unsyncedCount: StateFlow<Int> = signalRepository.unsyncedCount
+        .stateIn(viewModelScope, SharingStarted.Lazily, 0)
 
     private val _currentLocation = MutableStateFlow<Location?>(null)
     val currentLocation: StateFlow<Location?> = _currentLocation.asStateFlow()
@@ -115,12 +127,21 @@ class LoggingViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun exportFile(): java.io.File? {
+    /**
+     * Exports file, ensuring it exists by saving records first.
+     * This is a suspend function to ensure the file is saved before returning.
+     */
+    suspend fun exportFile(): java.io.File? {
+        // Ensure file exists by saving records first
+        signalRepository.saveRecords(_filename.value, "csv")
+        // Return the file after saving
         return fileLogger.getFile(_filename.value, "csv")
     }
 
     fun clearRecords() {
-        signalRepository.clearRecords()
+        viewModelScope.launch {
+            signalRepository.clearRecords()
+        }
     }
 
     fun hasLocationPermission(): Boolean {
@@ -205,5 +226,17 @@ class LoggingViewModel(application: Application) : AndroidViewModel(application)
             return _records.value // Show all if none selected
         }
         return _records.value.filter { it.subscriptionId in selectedIds }
+    }
+
+    /**
+     * Phase 1: Manually trigger a sync to cloud.
+     * Enqueues a one-time WorkRequest for immediate sync.
+     */
+    fun syncNow() {
+        val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
+            .setConstraints(SyncWorker.createConstraints())
+            .build()
+
+        WorkManager.getInstance(getApplication()).enqueue(syncRequest)
     }
 }
