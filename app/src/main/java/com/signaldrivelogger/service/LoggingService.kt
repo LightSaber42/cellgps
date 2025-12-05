@@ -10,6 +10,7 @@ import android.content.Intent
 import android.location.Location
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.signaldrivelogger.R
 import com.signaldrivelogger.data.FileLogger
@@ -44,6 +45,9 @@ class LoggingService : Service() {
     private val currentSignalDataBySim = mutableMapOf<Int, SignalData>() // Map of subscriptionId -> SignalData
     private var currentIntent: Intent? = null
 
+    // WakeLock to keep CPU awake during logging
+    private var wakeLock: PowerManager.WakeLock? = null
+
     override fun onCreate() {
         super.onCreate()
 
@@ -54,6 +58,13 @@ class LoggingService : Service() {
         multiSimMonitor = app.multiSimMonitor
         fileLogger = app.fileLogger
         signalRepository = app.signalRepository
+
+        // Initialize WakeLock
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "CellSignalLogger::LoggingWakelock"
+        )
 
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification("Starting logging..."))
@@ -71,6 +82,9 @@ class LoggingService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun startLogging() {
+        // Acquire WakeLock to keep CPU awake during logging (10 hour safety timeout)
+        wakeLock?.acquire(10 * 60 * 60 * 1000L)
+
         val filename = currentIntent?.getStringExtra(EXTRA_FILENAME) ?: "signal_log_${System.currentTimeMillis()}"
         signalRepository.setFilename(filename)
         serviceScope.launch {
@@ -99,21 +113,30 @@ class LoggingService : Service() {
     }
 
     private fun stopLogging() {
-        serviceScope.launch {
-            signalRepository.stopLogging()
-        }
+        // Stop collecting first
         locationProvider.stopLocationUpdates()
         telephonyMonitor.stopMonitoring()
         currentSignalDataBySim.clear()
 
-        // Finalize GPX file (now handled by stopLogging -> closeSession)
+        // Launch cleanup job - wait for all file operations to complete before stopping service
         serviceScope.launch {
-            fileLogger.finalizeGpx(signalRepository.getCurrentFilename())
-        }
+            // 1. Stop repo (closes active session buffers)
+            signalRepository.stopLogging()
 
-        updateNotification("Logging stopped")
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+            // 2. Finalize GPX (appends footer if needed)
+            fileLogger.finalizeGpx(signalRepository.getCurrentFilename())
+
+            // 3. Now it is safe to stop
+            updateNotification("Logging stopped")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+
+            // Release WakeLock
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+
+            stopSelf()
+        }
     }
 
     private fun tryCreateRecordForSim(subscriptionId: Int, signalData: SignalData) {
@@ -205,6 +228,11 @@ class LoggingService : Service() {
         serviceScope.cancel()
         locationProvider.stopLocationUpdates()
         telephonyMonitor.stopMonitoring()
+
+        // Release WakeLock if still held
+        if (wakeLock?.isHeld == true) {
+            wakeLock?.release()
+        }
     }
 
     companion object {

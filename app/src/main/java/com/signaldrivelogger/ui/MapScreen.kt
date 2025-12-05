@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -77,14 +78,61 @@ fun MapScreen(
         }
     }
 
-    // Store map controller and location overlay references for centering
+    // Store map controller, map view, and location overlay references
     val mapControllerRef = remember { mutableStateOf<IMapController?>(null) }
+    val mapViewRef = remember { mutableStateOf<MapView?>(null) }
     val locationOverlayRef = remember { mutableStateOf<MyLocationNewOverlay?>(null) }
+
+    // Track autocentering state - enable by default when logging
+    val isLogging by viewModel.isLogging.collectAsState()
+    var isAutoCenteringEnabled by remember { mutableStateOf(true) }
+
+    // Reset autocentering to enabled when logging starts
+    LaunchedEffect(isLogging) {
+        if (isLogging) {
+            isAutoCenteringEnabled = true
+        }
+    }
 
     // Initialize osmdroid configuration
     LaunchedEffect(Unit) {
         Configuration.getInstance().load(context, context.getSharedPreferences("osmdroid", android.content.Context.MODE_PRIVATE))
         Configuration.getInstance().userAgentValue = context.packageName
+    }
+
+
+    // Autocentering: Periodically check location and center map when enabled
+    LaunchedEffect(isAutoCenteringEnabled, isLogging, locationOverlayRef.value, mapControllerRef.value) {
+        if (!isAutoCenteringEnabled || !isLogging) return@LaunchedEffect
+
+        val overlay = locationOverlayRef.value
+        val controller = mapControllerRef.value
+
+        if (overlay == null || controller == null) return@LaunchedEffect
+
+        var lastLocation: android.location.Location? = null
+
+        // Check for location updates every 1 second
+        while (isAutoCenteringEnabled && isLogging) {
+            val currentOverlay = locationOverlayRef.value
+            val currentController = mapControllerRef.value
+
+            if (currentOverlay == null || currentController == null) break
+
+            val overlayLocation = currentOverlay.lastFix
+            if (overlayLocation != null) {
+                // Only center if location has changed significantly (more than 10 meters)
+                val shouldCenter = lastLocation == null ||
+                    overlayLocation.distanceTo(lastLocation) > 10.0f
+
+                if (shouldCenter) {
+                    val point = GeoPoint(overlayLocation.latitude, overlayLocation.longitude)
+                    currentController.animateTo(point)
+                    lastLocation = overlayLocation
+                }
+            }
+            delay(1000) // Check every second
+        }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -95,6 +143,9 @@ fun MapScreen(
                     setMultiTouchControls(true)
                     minZoomLevel = 3.0
                     maxZoomLevel = 21.0
+
+                    // Store references
+                    mapViewRef.value = this
 
                     // Set initial position
                     val initialRecords = if (selectedSimIds.isEmpty()) {
@@ -124,7 +175,8 @@ fun MapScreen(
             },
             modifier = Modifier.fillMaxSize(),
             update = { mapView ->
-                // Store controller reference
+                // Store references
+                mapViewRef.value = mapView
                 mapControllerRef.value = mapView.controller
 
                 // Update map when filtered records change
@@ -132,12 +184,15 @@ fun MapScreen(
             }
         )
 
-        // Center on location button
+        // Center on location button - toggles autocentering and centers once
         IconButton(
             onClick = {
                 val controller = mapControllerRef.value
                 if (controller != null) {
-                    // Try to get location from ViewModel first
+                    // Toggle autocentering
+                    isAutoCenteringEnabled = !isAutoCenteringEnabled
+
+                    // Center on current location
                     val location = currentLocation
                     if (location != null) {
                         val point = GeoPoint(location.latitude, location.longitude)
@@ -151,7 +206,7 @@ fun MapScreen(
                                 val point = GeoPoint(lastFix.latitude, lastFix.longitude)
                                 controller.animateTo(point)
                             } else {
-                                // If no location available, center on first record or show message
+                                // If no location available, center on first record
                                 if (filteredRecords.isNotEmpty()) {
                                     val firstRecord = filteredRecords.first()
                                     val point = GeoPoint(firstRecord.latitude, firstRecord.longitude)
@@ -164,13 +219,13 @@ fun MapScreen(
             },
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(8.dp)
+                .padding(top = 8.dp, end = 8.dp)
                 .size(40.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.MyLocation,
-                contentDescription = "Center on current location",
-                tint = MaterialTheme.colorScheme.primary,
+                contentDescription = if (isAutoCenteringEnabled) "Disable autocentering" else "Enable autocentering",
+                tint = if (isAutoCenteringEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
             )
         }
@@ -198,32 +253,51 @@ fun MapScreen(
 
 /**
  * Updates the map with signal strength colored polylines.
+ * OPTIMIZED: Batches consecutive segments of the same color into single Polyline objects
+ * to reduce overlay count and improve rendering performance on long drives.
  */
 private fun updateMapWithRecords(mapView: MapView, records: List<SignalRecord>) {
     // Remove existing polylines (except my location overlay)
-    val overlaysToRemove = mapView.overlays.filter { it !is MyLocationNewOverlay }
-    overlaysToRemove.forEach { mapView.overlays.remove(it) }
+    mapView.overlays.removeAll { it is Polyline }
 
     if (records.size < 2) return
 
-    // Create polylines colored by signal strength
+    val polylines = mutableListOf<Polyline>()
+
+    // Batch consecutive segments of the same color into single Polyline objects
+    // This significantly reduces the number of overlay objects (from N-1 to ~N/10 for typical drives)
+    var currentPolyline: Polyline? = null
+    var lastColor: Int? = null
+
     for (i in 0 until records.size - 1) {
         val record1 = records[i]
         val record2 = records[i + 1]
 
-        val polyline = Polyline().apply {
-            addPoint(GeoPoint(record1.latitude, record1.longitude))
-            addPoint(GeoPoint(record2.latitude, record2.longitude))
+        val color = getSignalColorAndroid(record1.signalStrength)
 
-            val color = getSignalColorAndroid(record1.signalStrength)
-            // Use outlinePaint for osmdroid 6.1.17+ (paint is deprecated)
-            outlinePaint.color = color
-            outlinePaint.strokeWidth = 12f
+        if (currentPolyline != null && color == lastColor) {
+            // Extend current line (same color segment)
+            currentPolyline.addPoint(GeoPoint(record2.latitude, record2.longitude))
+        } else {
+            // Finish previous polyline
+            currentPolyline?.let { polylines.add(it) }
+
+            // Start new polyline for this color segment
+            currentPolyline = Polyline().apply {
+                outlinePaint.color = color
+                outlinePaint.strokeWidth = 12f
+                // Add start and end points of this segment
+                addPoint(GeoPoint(record1.latitude, record1.longitude))
+                addPoint(GeoPoint(record2.latitude, record2.longitude))
+            }
+            lastColor = color
         }
-
-        mapView.overlays.add(polyline)
     }
 
+    // Add the last polyline if it exists
+    currentPolyline?.let { polylines.add(it) }
+
+    mapView.overlays.addAll(polylines)
     mapView.invalidate()
 }
 
@@ -277,7 +351,7 @@ private fun SimSelectorButtons(
             modifier = Modifier.padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            sims.forEachIndexed { index, sim ->
+            sims.forEach { sim ->
                 val isSelected = sim.subscriptionId in selectedSimIds
                 IconButton(
                     onClick = { onSimToggled(sim.subscriptionId) },

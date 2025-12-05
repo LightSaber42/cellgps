@@ -22,6 +22,9 @@ class SignalRepository(
     private val _records = MutableStateFlow<List<SignalRecord>>(emptyList())
     val records: StateFlow<List<SignalRecord>> = _records.asStateFlow()
 
+    // Throttle UI updates to prevent UI freeze on long drives
+    private var lastUiUpdate = 0L
+
     private val _isLogging = MutableStateFlow(false)
     val isLogging: StateFlow<Boolean> = _isLogging.asStateFlow()
 
@@ -106,18 +109,24 @@ class SignalRepository(
     /**
      * Adds a record to the list and logs it to file.
      * FIXED: Use MutableList to avoid O(N^2) list copying on every append.
+     * OPTIMIZED: Throttle UI updates to ~1Hz to prevent UI freeze on long drives.
      */
     suspend fun addRecord(record: SignalRecord) {
-        // Add to mutable list (O(1) operation)
+        // 1. Always add to internal list and log to file (High Frequency)
         _recordsList.add(record)
-        // Emit new list only occasionally or when needed for UI
-        // For now, emit every time but use efficient list copy
-        _records.value = _recordsList.toList()
 
         if (_isLogging.value) {
-            // Log to both CSV and GPX
+            // Log to both CSV and GPX (always, for data integrity)
             fileLogger.logToCsv(record, currentFilename)
             fileLogger.logToGpx(record, currentFilename)
+        }
+
+        // 2. Throttle UI updates to ~1Hz or when list is small
+        // This prevents the Map and UI from recomposing 10x per second
+        val now = System.currentTimeMillis()
+        if (now - lastUiUpdate > 1000 || _recordsList.size < 5) {
+            _records.value = _recordsList.toList()
+            lastUiUpdate = now
         }
     }
 
